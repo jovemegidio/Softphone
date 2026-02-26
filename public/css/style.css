@@ -40,6 +40,12 @@
   --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.1);
   --transition: 150ms ease;
+
+  /* Surface & Border (light theme) */
+  --surface-card: white;
+  --surface-dark: var(--gray-100);
+  --border: var(--gray-200);
+  --radius-sm: 6px;
 }
 
 body {
@@ -47,13 +53,15 @@ body {
   background: var(--gray-100);
   color: var(--gray-800);
   height: 100vh;
+  height: 100dvh; /* dynamic viewport height for mobile browsers */
   overflow: hidden;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ═══ SCREENS ═══ */
-.screen { display: none; height: 100vh; }
+.screen { display: none; height: 100vh; height: 100dvh; }
 .screen.active { display: flex; }
 
 /* ═══════════════════════════════════════════
@@ -269,7 +277,7 @@ body {
 /* ═══════════════════════════════════════════
    APP SHELL
    ═══════════════════════════════════════════ */
-.app-shell { display: flex; flex-direction: column; height: 100vh; }
+.app-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* Topbar */
 .topbar {
@@ -1013,6 +1021,7 @@ body {
   gap: 1px;
   user-select: none;
 }
+.dtmf-key { touch-action: manipulation; }
 .dtmf-key:hover {
   background: var(--brand-light);
   border-color: var(--brand);
@@ -1163,7 +1172,7 @@ body {
   margin-bottom: 0.25rem;
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--gray-100);
+  color: var(--gray-800);
 }
 .settings-section-header .material-icons-round {
   font-size: 1.15rem;
@@ -1171,7 +1180,7 @@ body {
 }
 .settings-desc {
   font-size: 0.8rem;
-  color: var(--gray-400);
+  color: var(--gray-500);
   margin-bottom: 1rem;
   line-height: 1.5;
 }
@@ -1196,7 +1205,7 @@ body {
 .form-field label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--gray-400);
+  color: var(--gray-600);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -1205,9 +1214,10 @@ body {
   padding: 0.55rem 0.75rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface-dark);
-  color: var(--gray-100);
+  background: var(--gray-50);
+  color: var(--gray-800);
   font-size: 0.85rem;
+  font-family: inherit;
   transition: border var(--transition), box-shadow var(--transition);
 }
 .form-group input:focus,
@@ -1220,19 +1230,19 @@ body {
 .form-field input::placeholder {
   color: var(--gray-500);
 }
-.input-icon {
+.settings-form .input-icon {
   position: relative;
   display: flex;
   align-items: center;
 }
-.input-icon .material-icons-round {
+.settings-form .input-icon .material-icons-round {
   position: absolute;
   left: 0.6rem;
   font-size: 1rem;
   color: var(--gray-500);
   pointer-events: none;
 }
-.input-icon input {
+.settings-form .input-icon input {
   padding-left: 2.1rem !important;
   width: 100%;
 }
@@ -1266,30 +1276,30 @@ body {
 }
 .settings-actions .btn-outline {
   background: transparent;
-  color: var(--gray-300);
+  color: var(--gray-600);
   border: 1px solid var(--border);
 }
 .settings-actions .btn-outline:hover {
   border-color: var(--gray-400);
-  color: var(--gray-100);
+  color: var(--gray-800);
 }
 .settings-actions .btn-danger {
-  background: rgba(239,68,68,.12);
+  background: rgba(239,68,68,.08);
   color: var(--danger);
-  border: 1px solid rgba(239,68,68,.25);
+  border: 1px solid rgba(239,68,68,.2);
 }
 .settings-actions .btn-danger:hover {
-  background: rgba(239,68,68,.2);
+  background: rgba(239,68,68,.15);
 }
 .settings-actions .btn-secondary {
-  background: var(--surface-dark);
-  color: var(--gray-300);
+  background: var(--gray-100);
+  color: var(--gray-700);
   border: 1px solid var(--border);
 }
 .settings-actions .btn-secondary:hover {
-  background: var(--surface-card);
-  border-color: var(--gray-500);
-  color: var(--gray-100);
+  background: var(--gray-200);
+  border-color: var(--gray-400);
+  color: var(--gray-800);
 }
 
 /* SIP Status Card */
@@ -1301,9 +1311,9 @@ body {
   border-radius: var(--radius-sm);
   font-size: 0.82rem;
   font-weight: 500;
-  background: var(--surface-dark);
+  background: var(--gray-50);
   border: 1px solid var(--border);
-  color: var(--gray-400);
+  color: var(--gray-600);
 }
 .sip-status-card .material-icons-round { font-size: 1.15rem; }
 .sip-status-card.sip-info-ok { background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.25); color: var(--success); }
@@ -1353,8 +1363,8 @@ body {
 }
 
 /* About section */
-.about-info { color: var(--gray-400); font-size: 0.82rem; line-height: 1.7; }
-.about-info strong { color: var(--gray-200); }
+.about-info { color: var(--gray-600); font-size: 0.82rem; line-height: 1.7; }
+.about-info strong { color: var(--gray-800); }
 .about-info .version-tag {
   display: inline-block;
   padding: 0.15rem 0.55rem;
@@ -1370,18 +1380,288 @@ body {
 /* ═══════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════ */
-@media (max-width: 900px) {
-  .panel-list { width: 260px; }
-  .notes-sidebar { width: 220px; }
-  .dtmf-grid { width: 200px; }
-  .dtmf-key { width: 60px; height: 48px; font-size: 1.1rem; }
-  .dtmf-display { width: 200px; font-size: 1.2rem; }
-  .form-row { grid-template-columns: 1fr; }
+
+/* ---------- LARGE DESKTOP (>1400px) ---------- */
+@media (min-width: 1400px) {
+  .panel-list { width: 360px; }
+  .notes-sidebar { width: 320px; }
+  .settings-scroll { max-width: 720px; }
 }
-@media (max-width: 700px) {
-  .sidebar { width: 56px; }
-  .nav-label { display: none; }
-  .panel-list { width: 220px; }
+
+/* ---------- TABLET (≤1024px) ---------- */
+@media (max-width: 1024px) {
+  .panel-list { width: 280px; }
+  .notes-sidebar { width: 240px; }
+  .call-controls { gap: 1rem; }
+  .btn-ctrl { min-width: 66px; padding: 0.65rem 1rem; }
+}
+
+/* ---------- SMALL TABLET (≤768px) — BOTTOM NAV ---------- */
+@media (max-width: 768px) {
+  /* Topbar compact */
+  .topbar { padding: 0 0.75rem; }
   .topbar-brand .brand-sm-text { display: none; }
+  .topbar-loc { display: none; }
+  .topbar-user .material-icons-round { display: none; }
+  .topbar-divider { display: none; }
+  #topbar-username { font-size: 0.8rem; }
+  .status-select {
+    padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+    font-size: 0.72rem;
+  }
+  .connection-indicator { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
+  .sip-badge { font-size: 0.65rem; padding: 0.15rem 0.4rem; }
+
+  /* App body: column layout for bottom nav */
+  .app-body { flex-direction: column; }
+
+  /* Sidebar → horizontal bottom bar */
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    order: 1;
+    border-top: 1px solid var(--gray-200);
+    background: white;
+    justify-content: center;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .nav-list {
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    flex: 1;
+    justify-content: center;
+  }
+  .nav-item {
+    padding: 0.5rem 0;
+    flex: 1;
+    max-width: 80px;
+    color: var(--gray-500);
+  }
+  .nav-item .material-icons-round { font-size: 20px; }
+  .nav-label { font-size: 0.55rem; }
+  .nav-item.active { color: var(--brand); }
+  .nav-item.active::before {
+    top: 0; bottom: auto;
+    left: 20%; right: 20%;
+    width: auto;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+  }
+  .sidebar-bottom {
+    display: flex;
+    padding: 0;
+  }
+  .sidebar-bottom .nav-item {
+    flex: 1;
+    max-width: 80px;
+  }
+
+  /* Content fills remaining space */
+  .content-area { flex: 1; overflow: hidden; }
+
+  /* Panel split stacks vertically */
+  .panel-split { flex-direction: column; }
+  .panel-list {
+    width: 100%;
+    max-height: 42%;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .panel-main { flex: 1; min-height: 0; }
+
+  /* Notes layout stacks */
+  .notes-layout { flex-direction: column; }
+  .notes-sidebar {
+    width: 100%;
+    max-height: 40%;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .notes-editor { flex: 1; min-height: 0; }
+
+  /* DTMF */
+  .dtmf-grid { width: 210px; }
+  .dtmf-key { width: 64px; height: 50px; font-size: 1.15rem; }
+  .dtmf-display { width: 210px; font-size: 1.2rem; }
+
+  /* Call controls */
+  .call-controls { gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+  .btn-ctrl { min-width: 62px; padding: 0.6rem 0.75rem; }
+
+  /* Settings */
+  .settings-scroll { padding: 1rem; }
+  .form-row { grid-template-columns: 1fr; }
+
+  /* Modal full width */
+  .modal { width: 95vw; }
+
+  /* Hero icon */
+  .hero-icon { font-size: 56px; }
+
+  /* History filters wrap */
+  .header-filters { flex-wrap: wrap; gap: 0.35rem; }
+  .filter-btn { font-size: 0.72rem; padding: 0.3rem 0.7rem; }
+}
+
+/* ---------- PHONE (≤480px) ---------- */
+@media (max-width: 480px) {
+  /* Topbar ultra compact */
+  .topbar { padding: 0 0.5rem; gap: 0.25rem; }
+  .topbar-center { gap: 0.35rem; }
+  .sip-badge { display: none; }
+  .connection-indicator .conn-text { display: none; }
+
+  /* Login card compact */
+  .login-card {
+    padding: 2rem 1.5rem;
+    border-radius: 16px;
+  }
+  .login-brand h1 { font-size: 1.5rem; }
+  .brand-icon { width: 56px; height: 56px; border-radius: 14px; }
+  .brand-icon .material-icons-round { font-size: 28px; }
+  .login-form { gap: 1rem; }
+
+  /* Panel list smaller */
+  .panel-list { max-height: 38%; }
+  .panel-header { padding: 0.75rem 1rem 0.5rem; }
+  .panel-header h2 { font-size: 1rem; }
+  .search-box { margin: 0 0.75rem 0.5rem; }
+  .entity-list li { padding: 0.6rem; gap: 0.6rem; }
+
+  /* DTMF compact */
+  .idle-dialpad { margin-top: 1rem; gap: 0.5rem; }
+  .dtmf-grid { width: 186px; gap: 6px; }
+  .dtmf-key { width: 56px; height: 44px; font-size: 1rem; }
+  .dtmf-display { width: 186px; font-size: 1.1rem; padding: 0.5rem 0.75rem; }
+  .dtmf-actions { gap: 1rem; }
+
+  /* Call view compact */
+  .call-view-inner { gap: 0.75rem; padding: 0 0.75rem; }
+  .call-view-inner h2 { font-size: 1.1rem; }
+  .call-pulse { width: 90px; height: 90px; }
+  .call-pulse-avatar { width: 56px; height: 56px; }
+  .call-pulse-avatar .material-icons-round { font-size: 26px; }
+  .active-call-avatar { width: 72px; height: 72px; }
+  .active-call-avatar .material-icons-round { font-size: 32px; }
+  .call-timer { font-size: 1.6rem; }
+  .call-controls { gap: 0.6rem; }
+  .btn-circle { width: 50px; height: 50px; }
+  .btn-circle .material-icons-round { font-size: 22px; }
+  .btn-circle-lg { width: 56px; height: 56px; }
+  .btn-ctrl { min-width: 56px; padding: 0.5rem 0.6rem; }
+  .btn-ctrl .material-icons-round { font-size: 20px; }
+  .btn-ctrl span:last-child { font-size: 0.6rem; }
+  .volume-slider { width: 120px; }
+  .incoming-btns { gap: 1.5rem; }
+
+  /* Notes compact */
+  .notes-sidebar { max-height: 35%; }
+  .note-body { margin: 0.5rem 0.75rem; padding: 1rem; min-height: 150px; }
+  .editor-topbar { padding: 0.6rem 0.75rem; gap: 0.5rem; }
+  .editor-toolbar { padding: 0.35rem 0.75rem; }
+  .editor-footer { padding: 0.35rem 0.75rem; }
+  .note-title-input { font-size: 1rem; }
+  .editor-actions { gap: 0.15rem; }
+  .note-cat-select { font-size: 0.72rem; padding: 0.2rem 0.35rem; }
+
+  /* Settings compact */
+  .settings-scroll { padding: 0.75rem; gap: 1rem; }
+  .settings-section { padding: 1rem; }
+  .settings-section-header h3 { font-size: 0.85rem; }
+  .settings-desc { font-size: 0.75rem; }
+  .settings-actions { flex-direction: column; }
+  .settings-actions .btn { width: 100%; justify-content: center; }
+
+  /* Toast full width */
+  .toast {
+    left: 0.75rem;
+    right: 0.75rem;
+    transform: translateX(0) translateY(80px);
+    font-size: 0.8rem;
+    white-space: normal;
+  }
+  .toast.show { transform: translateX(0) translateY(0); }
+
+  /* Modal compact */
+  .modal { border-radius: var(--radius); }
+  .modal-header { padding: 1rem; }
+  .modal-body { padding: 1rem; gap: 0.75rem; }
+  .modal-footer { padding: 0.75rem 1rem; }
+
+  /* Nav labels still visible */
+  .nav-label { font-size: 0.5rem; }
+
+  /* Hero smaller */
+  .hero-icon { font-size: 48px; }
+  .call-view-inner > p { font-size: 0.8rem; }
+}
+
+/* ---------- VERY SMALL PHONE (≤360px) ---------- */
+@media (max-width: 360px) {
+  .nav-label { display: none; }
+  .nav-item { padding: 0.6rem 0; }
+  .login-card { padding: 1.5rem 1.25rem; }
+  .login-brand h1 { font-size: 1.35rem; }
+  .brand-tagline { font-size: 0.78rem; }
+  .dtmf-grid { width: 162px; gap: 4px; }
+  .dtmf-key { width: 50px; height: 40px; font-size: 0.95rem; }
+  .dtmf-display { width: 162px; font-size: 1rem; }
+  .call-controls { gap: 0.4rem; }
+  .btn-ctrl { min-width: 50px; padding: 0.4rem 0.5rem; }
+  .btn-ctrl span:last-child { display: none; }
+  .panel-list { max-height: 35%; }
+  .panel-header h2 { font-size: 0.9rem; }
+  .settings-section-header h3 { font-size: 0.8rem; }
+  .topbar-center { gap: 0.25rem; }
   .status-select { display: none; }
+}
+
+/* ---------- LANDSCAPE PHONE ---------- */
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --topbar-h: 40px; }
+
+  /* Hide bottom nav in landscape, use screen width */
+  .sidebar { display: none; }
+
+  /* Panel split back to horizontal */
+  .panel-split { flex-direction: row; }
+  .panel-list {
+    width: 220px;
+    max-height: none;
+    border-bottom: none;
+    border-right: 1px solid var(--gray-200);
+  }
+
+  /* Call views compact vertically */
+  .call-pulse { width: 80px; height: 80px; }
+  .call-pulse-avatar { width: 48px; height: 48px; }
+  .active-call-avatar { width: 64px; height: 64px; }
+  .call-timer { font-size: 1.4rem; }
+  .call-view-inner { gap: 0.5rem; }
+  .hero-icon { font-size: 40px; }
+  .idle-dialpad { margin-top: 0.5rem; gap: 0.35rem; }
+
+  /* Login compact */
+  .login-card { padding: 1.25rem 2rem; }
+  .login-brand { margin-bottom: 0.75rem; }
+  .brand-icon { width: 44px; height: 44px; margin-bottom: 0.5rem; }
+  .brand-icon .material-icons-round { font-size: 22px; }
+  .login-brand h1 { font-size: 1.25rem; }
+  .login-form { gap: 0.75rem; }
+  .form-field label { font-size: 0.7rem; margin-bottom: 0.2rem; }
+  .input-icon input { padding: 0.5rem 0.5rem 0.5rem 2.5rem; font-size: 0.85rem; }
+
+  /* Notes back to horizontal */
+  .notes-layout { flex-direction: row; }
+  .notes-sidebar {
+    width: 200px;
+    max-height: none;
+    border-bottom: none;
+    border-right: 1px solid var(--gray-200);
+  }
+
+  /* Settings scroll */
+  .settings-scroll { padding: 0.75rem; gap: 0.75rem; }
 }
