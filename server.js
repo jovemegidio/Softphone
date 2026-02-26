@@ -119,17 +119,27 @@ const onlineUsers = new Map();
 io.on('connection', (socket) => {
   console.log(`[+] Conectado: ${socket.id}`);
 
-  socket.on('register', ({ username, location }) => {
+  socket.on('register', ({ username, location, status }) => {
     const user = {
       id: socket.id,
       username: username.trim(),
       location: location || '',
-      status: 'disponível',
+      status: status || 'disponível',
       joinedAt: new Date().toISOString()
     };
     onlineUsers.set(socket.id, user);
-    console.log(`[✓] ${username} (${location}) registrado`);
+    console.log(`[✓] ${username} (${location}) registrado — status: ${user.status}`);
     broadcastUserList();
+  });
+
+  // ═══ STATUS UPDATE ═══
+  socket.on('update-status', ({ status }) => {
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      user.status = status;
+      console.log(`[~] ${user.username} mudou status para: ${status}`);
+      broadcastUserList();
+    }
   });
 
   socket.on('call-request', ({ targetId, offer }) => {
@@ -184,6 +194,39 @@ io.on('connection', (socket) => {
     if (target) target.status = 'disponível';
     broadcastUserList();
     io.to(targetId).emit('call-ended', { endedBy: user?.username });
+  });
+
+  // ═══ CALL HOLD / RESUME ═══
+  socket.on('call-hold', ({ targetId }) => {
+    const user = onlineUsers.get(socket.id);
+    console.log(`[⏸] ${user?.username} colocou chamada em espera`);
+    io.to(targetId).emit('call-on-hold', { by: user?.username });
+  });
+
+  socket.on('call-resume', ({ targetId }) => {
+    const user = onlineUsers.get(socket.id);
+    console.log(`[▶] ${user?.username} retomou a chamada`);
+    io.to(targetId).emit('call-resumed', { by: user?.username });
+  });
+
+  // ═══ CALL TRANSFER ═══
+  socket.on('call-transfer', ({ currentCallTarget, transferTo }) => {
+    const user = onlineUsers.get(socket.id);
+    if (user) user.status = 'disponível';
+    console.log(`[→] ${user?.username} transferiu chamada para ${transferTo}`);
+
+    // Notify the current call target about the transfer
+    io.to(currentCallTarget).emit('call-transferred', {
+      from: user?.username,
+      transferTo: transferTo
+    });
+
+    broadcastUserList();
+  });
+
+  // ═══ DTMF RELAY ═══
+  socket.on('dtmf-tone', ({ targetId, tone }) => {
+    io.to(targetId).emit('dtmf-received', { tone });
   });
 
   socket.on('disconnect', () => {

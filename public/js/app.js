@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════
-//  SOFTPHONE PRO v2.0 — Client Application
+//  SOFTPHONE PRO v3.0 — Client Application
+//  Features: DTMF, Hold, Transfer, DND, Status,
+//  Ringtone, Volume Slider, Click-to-Dial
 // ═══════════════════════════════════════════════════
 
-// Detecta se está no GitHub Pages ou rodando localmente
+// ═══ CONFIG ═══
 const isGitHubPages = window.location.hostname.includes('github.io');
 
 function getServerUrl() {
@@ -19,7 +21,6 @@ let socket = io(getServerUrl(), {
   timeout: 10000
 });
 
-// Reconectar com novo servidor (quando muda URL no GitHub Pages)
 function reconnectSocket(url) {
   socket.disconnect();
   socket = io(url, { reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 2000, timeout: 10000 });
@@ -36,6 +37,7 @@ const DOM = {
   loginForm: $('#login-form'),
   usernameInput: $('#username-input'),
   locationInput: $('#location-input'),
+  loginBtn: $('#login-btn'),
   topbarUsername: $('#topbar-username'),
   topbarLocation: $('#topbar-location'),
   topbarAvatar: $('#topbar-avatar'),
@@ -47,6 +49,8 @@ const DOM = {
   toast: $('#toast'),
   toastMsg: $('.toast-msg'),
   toastIcon: $('.toast-icon'),
+  // Status
+  userStatus: $('#user-status'),
   // Call views
   callIdle: $('#call-idle'),
   callCalling: $('#call-calling'),
@@ -64,7 +68,16 @@ const DOM = {
   rejectCallBtn: $('#reject-call-btn'),
   endCallBtn: $('#end-call-btn'),
   muteBtn: $('#mute-btn'),
-  speakerBtn: $('#speaker-btn'),
+  holdBtn: $('#hold-btn'),
+  transferBtn: $('#transfer-btn'),
+  dtmfToggleBtn: $('#dtmf-toggle-btn'),
+  volumeSlider: $('#volume-slider'),
+  // DTMF
+  dtmfPad: $('#dtmf-pad'),
+  dtmfDisplay: $('#dtmf-display'),
+  // Transfer Modal
+  transferModal: $('#transfer-modal'),
+  transferUserList: $('#transfer-user-list'),
   // Connection
   connIndicator: $('#conn-indicator'),
 };
@@ -73,17 +86,22 @@ const DOM = {
 let state = {
   username: '',
   location: '',
+  userStatus: 'disponível',
+  dnd: false,
   currentCallTarget: null,
+  currentCallName: null,
   peerConnection: null,
   localStream: null,
   callTimerInterval: null,
   callSeconds: 0,
   isMuted: false,
+  isOnHold: false,
   pendingOffer: null,
   pendingCallerId: null,
   pendingCallerName: null,
   pendingCallerLocation: null,
   allUsers: [],
+  dtmfInput: '',
   // Notes
   notes: [],
   currentNoteId: null,
@@ -95,7 +113,7 @@ let state = {
   historyFilter: 'all',
 };
 
-// ICE config com TURN para chamadas remotas entre cidades/estados
+// ═══ ICE CONFIG ═══
 const iceConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -103,25 +121,93 @@ const iceConfig = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    // TURN servers gratuitos (para produção, use seus próprios)
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
   ],
   iceCandidatePoolSize: 10
 };
+
+// ═══ DTMF FREQUENCIES ═══
+const DTMF_FREQS = {
+  '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
+  '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
+  '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
+  '*': [941, 1209], '0': [941, 1336], '#': [941, 1477]
+};
+
+// ═══ AUDIO CONTEXT ═══
+let audioCtx = null;
+let ringtoneInterval = null;
+
+function getAudioContext() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// ═══════════════════════════════════════════
+//  DTMF TONE GENERATION
+// ═══════════════════════════════════════════
+function playDTMF(key) {
+  const freqs = DTMF_FREQS[key];
+  if (!freqs) return;
+  const ctx = getAudioContext();
+  const duration = 0.15;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+  gain.connect(ctx.destination);
+  freqs.forEach(freq => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.connect(gain);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  RINGTONE (Web Audio API)
+// ═══════════════════════════════════════════
+function startRingtone() {
+  stopRingtone();
+  const ctx = getAudioContext();
+  let isPlaying = false;
+
+  ringtoneInterval = setInterval(() => {
+    if (isPlaying) return;
+    isPlaying = true;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.connect(ctx.destination);
+
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(440, ctx.currentTime);
+    osc1.connect(gain);
+
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(480, ctx.currentTime);
+    osc2.connect(gain);
+
+    osc1.start(ctx.currentTime);
+    osc2.start(ctx.currentTime);
+
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.setValueAtTime(0, ctx.currentTime + 1);
+
+    osc1.stop(ctx.currentTime + 1);
+    osc2.stop(ctx.currentTime + 1);
+
+    setTimeout(() => { isPlaying = false; }, 3000);
+  }, 100);
+}
+
+function stopRingtone() {
+  if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; }
+}
 
 // ═══════════════════════════════════════════
 //  LOGIN
@@ -132,7 +218,7 @@ DOM.loginForm.addEventListener('submit', (e) => {
   const loc = DOM.locationInput.value.trim();
   if (!name) { showToast('Digite seu nome para conectar', 'warning'); return; }
 
-  // Se no GitHub Pages, salva e reconecta ao servidor informado
+  // GitHub Pages: save server URL and reconnect
   if (isGitHubPages) {
     const serverInput = document.getElementById('server-input');
     const serverUrl = serverInput ? serverInput.value.trim() : '';
@@ -144,14 +230,18 @@ DOM.loginForm.addEventListener('submit', (e) => {
   state.username = name;
   state.location = loc || 'Não informado';
 
-  // Aguarda conexão antes de registrar
+  DOM.loginBtn.disabled = true;
+  DOM.loginBtn.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Conectando...';
+
   const doRegister = () => {
-    socket.emit('register', { username: state.username, location: state.location });
+    socket.emit('register', { username: state.username, location: state.location, status: state.userStatus });
     DOM.topbarUsername.textContent = state.username;
     DOM.topbarLocation.textContent = state.location;
     DOM.topbarAvatar.textContent = state.username.charAt(0).toUpperCase();
     switchScreen('main');
     showToast(`Bem-vindo, ${state.username}!`, 'success');
+    DOM.loginBtn.disabled = false;
+    DOM.loginBtn.innerHTML = '<span class="material-icons-round">login</span> Conectar ao Sistema';
     loadNotes();
     loadContacts();
     loadHistory();
@@ -161,10 +251,31 @@ DOM.loginForm.addEventListener('submit', (e) => {
     doRegister();
   } else {
     showToast('Conectando ao servidor...', 'info');
-    socket.once('connect', doRegister);
-    socket.once('connect_error', () => {
+
+    const connectTimeout = setTimeout(() => {
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onError);
+      DOM.loginBtn.disabled = false;
+      DOM.loginBtn.innerHTML = '<span class="material-icons-round">login</span> Conectar ao Sistema';
+      showToast('Tempo esgotado. Verifique se o servidor está rodando.', 'error');
+    }, 8000);
+
+    const onConnect = () => {
+      clearTimeout(connectTimeout);
+      socket.off('connect_error', onError);
+      doRegister();
+    };
+
+    const onError = () => {
+      clearTimeout(connectTimeout);
+      socket.off('connect', onConnect);
+      DOM.loginBtn.disabled = false;
+      DOM.loginBtn.innerHTML = '<span class="material-icons-round">login</span> Conectar ao Sistema';
       showToast('Não foi possível conectar ao servidor. Verifique o endereço.', 'error');
-    });
+    };
+
+    socket.once('connect', onConnect);
+    socket.once('connect_error', onError);
   }
 });
 
@@ -175,8 +286,6 @@ DOM.logoutBtn.addEventListener('click', () => {
   socket.connect();
   state.username = '';
   state.location = '';
-  DOM.usernameInput.value = '';
-  DOM.locationInput.value = '';
 });
 
 function switchScreen(screen) {
@@ -193,22 +302,232 @@ $$('.nav-item[data-tab]').forEach(item => {
     $$('.nav-item').forEach(n => n.classList.remove('active'));
     item.classList.add('active');
     $$('.tab-panel').forEach(p => p.classList.remove('active'));
-    const tab = item.dataset.tab;
-    $(`#tab-${tab}`).classList.add('active');
+    $(`#tab-${item.dataset.tab}`).classList.add('active');
   });
 });
 
 // ═══════════════════════════════════════════
-//  USER LIST
+//  STATUS MANAGEMENT
+// ═══════════════════════════════════════════
+if (DOM.userStatus) {
+  DOM.userStatus.addEventListener('change', () => {
+    state.userStatus = DOM.userStatus.value;
+    state.dnd = (state.userStatus === 'nao_perturbe');
+    socket.emit('update-status', { status: state.userStatus });
+    const labels = { 'disponível': 'Disponível', 'ausente': 'Ausente', 'ocupado': 'Ocupado', 'nao_perturbe': 'Não Perturbe' };
+    showToast(`Status: ${labels[state.userStatus]}`, 'info');
+  });
+}
+
+// ═══════════════════════════════════════════
+//  DTMF PAD HANDLERS
+// ═══════════════════════════════════════════
+$$('.dtmf-key').forEach(key => {
+  key.addEventListener('click', () => {
+    const tone = key.dataset.tone;
+    playDTMF(tone);
+
+    // In-call: send DTMF to remote peer
+    if (state.currentCallTarget) {
+      socket.emit('dtmf-tone', { targetId: state.currentCallTarget, tone });
+    }
+
+    // Idle pad: update display
+    if (DOM.dtmfDisplay && !state.currentCallTarget) {
+      state.dtmfInput += tone;
+      DOM.dtmfDisplay.value = state.dtmfInput;
+    }
+  });
+});
+
+// DTMF backspace
+const dtmfBackspace = $('#dtmf-backspace');
+if (dtmfBackspace) {
+  dtmfBackspace.addEventListener('click', () => {
+    state.dtmfInput = state.dtmfInput.slice(0, -1);
+    if (DOM.dtmfDisplay) DOM.dtmfDisplay.value = state.dtmfInput;
+  });
+}
+
+// DTMF call button (dial from idle pad)
+const dtmfCallBtn = $('#dtmf-call-btn');
+if (dtmfCallBtn) {
+  dtmfCallBtn.addEventListener('click', () => {
+    if (!state.dtmfInput) { showToast('Digite um número ou nome', 'warning'); return; }
+    const query = state.dtmfInput.toLowerCase();
+    const target = state.allUsers.find(u =>
+      u.id !== socket.id &&
+      u.status === 'disponível' &&
+      (u.username.toLowerCase().includes(query) || (u.location || '').toLowerCase().includes(query))
+    );
+    if (target) {
+      initiateCall(target.id, target.username, target.location);
+    } else {
+      showToast('Usuário não encontrado ou indisponível', 'warning');
+    }
+  });
+}
+
+// Toggle DTMF pad during call
+if (DOM.dtmfToggleBtn) {
+  DOM.dtmfToggleBtn.addEventListener('click', () => {
+    if (DOM.dtmfPad) {
+      DOM.dtmfPad.classList.toggle('hidden');
+      DOM.dtmfToggleBtn.classList.toggle('active', !DOM.dtmfPad.classList.contains('hidden'));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+//  VOLUME SLIDER
+// ═══════════════════════════════════════════
+if (DOM.volumeSlider) {
+  DOM.volumeSlider.addEventListener('input', () => {
+    const vol = DOM.volumeSlider.value / 100;
+    DOM.remoteAudio.volume = vol;
+    const icon = DOM.volumeSlider.closest('.volume-control')?.querySelector('.vol-icon');
+    if (icon) {
+      icon.textContent = vol === 0 ? 'volume_off' : vol < 0.5 ? 'volume_down' : 'volume_up';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+//  SOCKET EVENTS (inside setupSocketEvents)
 // ═══════════════════════════════════════════
 function setupSocketEvents() {
-  socket.off(); // Remove listeners antigos para evitar duplicação
+  socket.off();
 
+  // ── User list ──
   socket.on('user-list', (users) => {
     state.allUsers = users;
     renderUserList();
   });
 
+  // ── Incoming call ──
+  socket.on('incoming-call', async ({ callerId, callerName, callerLocation, offer }) => {
+    // DND: auto-reject
+    if (state.dnd || state.userStatus === 'nao_perturbe') {
+      socket.emit('call-rejected', { callerId });
+      return;
+    }
+    if (state.currentCallTarget) {
+      socket.emit('call-rejected', { callerId });
+      return;
+    }
+    state.currentCallTarget = callerId;
+    state.currentCallName = callerName;
+    state.pendingOffer = offer;
+    state.pendingCallerId = callerId;
+    state.pendingCallerName = callerName;
+    state.pendingCallerLocation = callerLocation || '';
+    DOM.incomingName.textContent = callerName;
+    DOM.incomingLocation.textContent = callerLocation || '';
+    setCallView('incoming');
+    startRingtone();
+    showToast(`${callerName} está ligando`, 'info');
+  });
+
+  // ── Call answered ──
+  socket.on('call-answered', async ({ answer, calleeName, calleeLocation }) => {
+    try {
+      await state.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      state.currentCallName = calleeName;
+      DOM.activeCallName.textContent = calleeName;
+      DOM.activeCallLocation.textContent = calleeLocation || '';
+      setCallView('active');
+      startCallTimer();
+      showToast(`Em ligação com ${calleeName}`, 'success');
+    } catch (err) {
+      console.error('Answer error:', err);
+      cleanupCall();
+    }
+  });
+
+  // ── Call rejected ──
+  socket.on('call-rejected-response', ({ calleeName }) => {
+    showToast(`${calleeName} recusou a chamada`, 'warning');
+    cleanupCall();
+  });
+
+  socket.on('call-error', ({ message }) => {
+    showToast(message, 'warning');
+    cleanupCall();
+  });
+
+  // ── ICE candidates ──
+  socket.on('ice-candidate', async ({ candidate }) => {
+    try {
+      if (state.peerConnection && candidate) {
+        await state.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    } catch (e) { console.error('ICE error:', e); }
+  });
+
+  // ── Call ended ──
+  socket.on('call-ended', ({ endedBy }) => {
+    showToast(`Ligação encerrada por ${endedBy}`, 'info');
+    cleanupCall();
+  });
+
+  // ── Call on hold ──
+  socket.on('call-on-hold', ({ by }) => {
+    showToast(`${by} colocou a chamada em espera`, 'info');
+  });
+
+  socket.on('call-resumed', ({ by }) => {
+    showToast(`${by} retomou a chamada`, 'info');
+  });
+
+  // ── Call transfer ──
+  socket.on('call-transferred', ({ from, transferTo }) => {
+    showToast(`Chamada transferida por ${from}`, 'info');
+    cleanupCall();
+    const target = state.allUsers.find(u => u.id === transferTo);
+    if (target) {
+      setTimeout(() => initiateCall(target.id, target.username, target.location), 500);
+    }
+  });
+
+  // ── DTMF received ──
+  socket.on('dtmf-received', ({ tone }) => {
+    playDTMF(tone);
+  });
+
+  // ── Connection status ──
+  socket.on('disconnect', () => {
+    updateConnectionUI(false);
+    showToast('Conexão perdida. Reconectando...', 'error');
+  });
+
+  socket.on('connect', () => {
+    updateConnectionUI(true);
+    if (state.username) {
+      socket.emit('register', { username: state.username, location: state.location, status: state.userStatus });
+      showToast('Reconectado!', 'success');
+    }
+  });
+}
+
+function updateConnectionUI(connected) {
+  const dot = DOM.connIndicator.querySelector('.conn-dot');
+  const text = DOM.connIndicator.querySelector('.conn-text');
+  if (connected) {
+    text.textContent = 'Conectado';
+    dot.style.background = 'var(--success)';
+    DOM.connIndicator.style.background = 'var(--success-light)';
+    DOM.connIndicator.style.color = 'var(--success)';
+  } else {
+    text.textContent = 'Desconectado';
+    dot.style.background = 'var(--danger)';
+    DOM.connIndicator.style.background = 'var(--danger-light)';
+    DOM.connIndicator.style.color = 'var(--danger)';
+  }
+}
+
+// ═══════════════════════════════════════════
+//  USER LIST
+// ═══════════════════════════════════════════
 DOM.searchUsers.addEventListener('input', renderUserList);
 
 function renderUserList() {
@@ -224,13 +543,16 @@ function renderUserList() {
     return;
   }
 
+  const statusDots = { 'disponível': 'available', 'ausente': 'away', 'ocupado': 'busy', 'nao_perturbe': 'dnd', 'em_ligação': 'busy' };
+  const statusLabels = { 'disponível': 'Disponível', 'ausente': 'Ausente', 'ocupado': 'Ocupado', 'nao_perturbe': 'Não Perturbe', 'em_ligação': 'Em Ligação' };
+
   DOM.userList.innerHTML = others.map(u => {
     const initial = u.username.charAt(0).toUpperCase();
-    const available = u.status === 'disponível';
-    const statusText = available ? 'Disponível' : 'Em ligação';
-    const dotClass = available ? 'available' : 'busy';
+    const canCall = u.status === 'disponível';
+    const dotClass = statusDots[u.status] || 'available';
+    const statusText = statusLabels[u.status] || u.status;
     return `
-      <li class="item" ${available ? `onclick="initiateCall('${u.id}','${escHtml(u.username)}','${escHtml(u.location || '')}')"` : ''}>
+      <li class="item" ${canCall ? `onclick="initiateCall('${u.id}','${escHtml(u.username)}','${escHtml(u.location || '')}')"` : ''}>
         <div class="user-avatar-wrap">
           ${initial}
           <span class="online-dot ${dotClass}"></span>
@@ -242,7 +564,7 @@ function renderUserList() {
             ${escHtml(u.location || 'Não informado')} · ${statusText}
           </div>
         </div>
-        ${available ? `<button class="call-item-btn" onclick="event.stopPropagation(); initiateCall('${u.id}','${escHtml(u.username)}','${escHtml(u.location || '')}')"><span class="material-icons-round">call</span></button>` : ''}
+        ${canCall ? `<button class="call-item-btn" onclick="event.stopPropagation(); initiateCall('${u.id}','${escHtml(u.username)}','${escHtml(u.location || '')}')"><span class="material-icons-round">call</span></button>` : ''}
       </li>
     `;
   }).join('');
@@ -253,9 +575,12 @@ function renderUserList() {
 // ═══════════════════════════════════════════
 async function initiateCall(targetId, targetName, targetLocation) {
   if (state.currentCallTarget) { showToast('Você já está em uma ligação', 'warning'); return; }
+  if (state.dnd) { showToast('Desative o Não Perturbe para fazer chamadas', 'warning'); return; }
+
   try {
     state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     state.currentCallTarget = targetId;
+    state.currentCallName = targetName;
     DOM.callingName.textContent = targetName;
     DOM.callingLocation.textContent = targetLocation || '';
     setCallView('calling');
@@ -275,21 +600,12 @@ async function initiateCall(targetId, targetName, targetLocation) {
     cleanupCall();
   }
 }
+// Expose to global for onclick handlers in rendered HTML
+window.initiateCall = initiateCall;
 
-  socket.on('incoming-call', async ({ callerId, callerName, callerLocation, offer }) => {
-    if (state.currentCallTarget) { socket.emit('call-rejected', { callerId }); return; }
-    state.currentCallTarget = callerId;
-    state.pendingOffer = offer;
-    state.pendingCallerId = callerId;
-    state.pendingCallerName = callerName;
-    state.pendingCallerLocation = callerLocation || '';
-    DOM.incomingName.textContent = callerName;
-    DOM.incomingLocation.textContent = callerLocation || '';
-    setCallView('incoming');
-    showToast(`${callerName} está ligando`, 'info');
-  });
-
+// Accept call
 DOM.acceptCallBtn.addEventListener('click', async () => {
+  stopRingtone();
   try {
     state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     createPeerConnection(state.pendingCallerId);
@@ -311,49 +627,83 @@ DOM.acceptCallBtn.addEventListener('click', async () => {
   }
 });
 
+// Reject call
 DOM.rejectCallBtn.addEventListener('click', () => {
+  stopRingtone();
   socket.emit('call-rejected', { callerId: state.pendingCallerId });
   showToast('Chamada recusada', 'info');
   cleanupCall();
 });
 
-  socket.on('call-answered', async ({ answer, calleeName, calleeLocation }) => {
-    try {
-      await state.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      DOM.activeCallName.textContent = calleeName;
-      DOM.activeCallLocation.textContent = calleeLocation || '';
-      setCallView('active');
-      startCallTimer();
-      showToast(`Em ligação com ${calleeName}`, 'success');
-    } catch (err) {
-      console.error('Answer error:', err);
-      cleanupCall();
-    }
-  });
-
-  socket.on('call-rejected-response', ({ calleeName }) => {
-    showToast(`${calleeName} recusou a chamada`, 'warning');
-    cleanupCall();
-  });
-
-  socket.on('call-error', ({ message }) => { showToast(message, 'warning'); cleanupCall(); });
-
-  socket.on('ice-candidate', async ({ candidate }) => {
-    try { if (state.peerConnection && candidate) await state.peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); }
-    catch (e) { console.error('ICE error:', e); }
-  });
-
+// Cancel / End call
 DOM.cancelCallBtn.addEventListener('click', () => { endCurrentCall(); showToast('Chamada cancelada', 'info'); });
 DOM.endCallBtn.addEventListener('click', () => { endCurrentCall(); showToast('Chamada encerrada', 'info'); });
 
 function endCurrentCall() {
+  stopRingtone();
   if (state.currentCallTarget) socket.emit('end-call', { targetId: state.currentCallTarget });
   cleanupCall();
 }
 
-  socket.on('call-ended', ({ endedBy }) => { showToast(`Ligação encerrada por ${endedBy}`, 'info'); cleanupCall(); });
+// ═══ HOLD / RESUME ═══
+if (DOM.holdBtn) {
+  DOM.holdBtn.addEventListener('click', () => {
+    if (!state.currentCallTarget || !state.localStream) return;
+    state.isOnHold = !state.isOnHold;
 
-// Mute
+    // Mute audio when on hold
+    state.localStream.getAudioTracks().forEach(t => t.enabled = !state.isOnHold);
+
+    DOM.holdBtn.classList.toggle('active', state.isOnHold);
+    DOM.holdBtn.querySelector('.material-icons-round').textContent = state.isOnHold ? 'play_arrow' : 'pause';
+    DOM.holdBtn.querySelectorAll('span')[1].textContent = state.isOnHold ? 'Retomar' : 'Espera';
+
+    socket.emit(state.isOnHold ? 'call-hold' : 'call-resume', { targetId: state.currentCallTarget });
+    showToast(state.isOnHold ? 'Chamada em espera' : 'Chamada retomada', 'info');
+  });
+}
+
+// ═══ TRANSFER ═══
+if (DOM.transferBtn) {
+  DOM.transferBtn.addEventListener('click', () => {
+    if (!state.currentCallTarget) return;
+
+    const available = state.allUsers.filter(u =>
+      u.id !== socket.id && u.id !== state.currentCallTarget && u.status === 'disponível'
+    );
+
+    if (available.length === 0) {
+      showToast('Nenhum usuário disponível para transferência', 'warning');
+      return;
+    }
+
+    DOM.transferUserList.innerHTML = available.map(u => `
+      <li class="item" onclick="executeTransfer('${u.id}', '${escHtml(u.username)}')">
+        <div class="user-avatar-wrap">${u.username.charAt(0).toUpperCase()}<span class="online-dot available"></span></div>
+        <div class="entity-info">
+          <div class="entity-name">${escHtml(u.username)}</div>
+          <div class="entity-sub"><span class="material-icons-round">location_on</span>${escHtml(u.location || 'Não informado')}</div>
+        </div>
+        <button class="call-item-btn" style="opacity:1;transform:scale(1);"><span class="material-icons-round">phone_forwarded</span></button>
+      </li>
+    `).join('');
+
+    DOM.transferModal.classList.remove('hidden');
+  });
+}
+
+window.executeTransfer = function(targetUserId, targetUsername) {
+  socket.emit('call-transfer', { currentCallTarget: state.currentCallTarget, transferTo: targetUserId });
+  DOM.transferModal.classList.add('hidden');
+  showToast(`Chamada transferida para ${targetUsername}`, 'success');
+  cleanupCall();
+};
+
+$('#close-transfer-modal')?.addEventListener('click', () => {
+  DOM.transferModal.classList.add('hidden');
+});
+
+// ═══ MUTE ═══
 DOM.muteBtn.addEventListener('click', () => {
   if (!state.localStream) return;
   state.isMuted = !state.isMuted;
@@ -363,28 +713,42 @@ DOM.muteBtn.addEventListener('click', () => {
   showToast(state.isMuted ? 'Microfone desligado' : 'Microfone ligado', 'info');
 });
 
-// Speaker
-DOM.speakerBtn.addEventListener('click', () => {
-  const low = DOM.speakerBtn.classList.toggle('active');
-  DOM.remoteAudio.volume = low ? 0.2 : 1.0;
-  DOM.speakerBtn.querySelector('.material-icons-round').textContent = low ? 'volume_off' : 'volume_up';
-});
-
-// WebRTC
+// ═══ WebRTC ═══
 function createPeerConnection(targetId) {
   state.peerConnection = new RTCPeerConnection(iceConfig);
+
   state.peerConnection.onicecandidate = (e) => {
     if (e.candidate) socket.emit('ice-candidate', { targetId, candidate: e.candidate });
   };
-  state.peerConnection.ontrack = (e) => { DOM.remoteAudio.srcObject = e.streams[0]; };
+
+  state.peerConnection.ontrack = (e) => {
+    DOM.remoteAudio.srcObject = e.streams[0];
+    if (DOM.volumeSlider) DOM.remoteAudio.volume = DOM.volumeSlider.value / 100;
+  };
+
   state.peerConnection.oniceconnectionstatechange = () => {
     const s = state.peerConnection.iceConnectionState;
-    if (s === 'disconnected' || s === 'failed') { showToast('Conexão perdida', 'error'); endCurrentCall(); }
+    updateCallQuality(s);
+    if (s === 'disconnected' || s === 'failed') {
+      showToast('Conexão perdida', 'error');
+      endCurrentCall();
+    }
   };
+}
+
+function updateCallQuality(iceState) {
+  const indicator = $('#call-quality-dot');
+  if (!indicator) return;
+  const colors = { 'connected': 'var(--success)', 'completed': 'var(--success)', 'checking': 'var(--warning)', 'new': 'var(--gray-400)' };
+  const labels = { 'connected': 'Qualidade Boa', 'completed': 'Qualidade Boa', 'checking': 'Conectando...', 'new': 'Iniciando...' };
+  indicator.style.background = colors[iceState] || 'var(--danger)';
+  const labelEl = $('#call-quality-text');
+  if (labelEl) labelEl.textContent = labels[iceState] || iceState;
 }
 
 function setCallView(view) {
   [DOM.callIdle, DOM.callCalling, DOM.callIncoming, DOM.callActive].forEach(v => v.classList.remove('active'));
+  if (DOM.dtmfPad && view !== 'active') DOM.dtmfPad.classList.add('hidden');
   switch (view) {
     case 'idle': DOM.callIdle.classList.add('active'); break;
     case 'calling': DOM.callCalling.classList.add('active'); break;
@@ -394,12 +758,23 @@ function setCallView(view) {
 }
 
 function cleanupCall() {
+  stopRingtone();
   if (state.peerConnection) { state.peerConnection.close(); state.peerConnection = null; }
   if (state.localStream) { state.localStream.getTracks().forEach(t => t.stop()); state.localStream = null; }
   state.currentCallTarget = null;
+  state.currentCallName = null;
   state.isMuted = false;
+  state.isOnHold = false;
+  state.dtmfInput = '';
+  if (DOM.dtmfDisplay) DOM.dtmfDisplay.value = '';
   DOM.muteBtn.classList.remove('active');
   DOM.muteBtn.querySelector('.material-icons-round').textContent = 'mic';
+  if (DOM.holdBtn) {
+    DOM.holdBtn.classList.remove('active');
+    DOM.holdBtn.querySelector('.material-icons-round').textContent = 'pause';
+    DOM.holdBtn.querySelectorAll('span')[1].textContent = 'Espera';
+  }
+  if (DOM.dtmfToggleBtn) DOM.dtmfToggleBtn.classList.remove('active');
   stopCallTimer();
   setCallView('idle');
   loadHistory();
@@ -410,11 +785,13 @@ function startCallTimer() {
   updateTimer();
   state.callTimerInterval = setInterval(() => { state.callSeconds++; updateTimer(); }, 1000);
 }
+
 function stopCallTimer() {
   if (state.callTimerInterval) { clearInterval(state.callTimerInterval); state.callTimerInterval = null; }
   state.callSeconds = 0;
   DOM.callTimer.textContent = '00:00';
 }
+
 function updateTimer() {
   const m = String(Math.floor(state.callSeconds / 60)).padStart(2, '0');
   const s = String(state.callSeconds % 60).padStart(2, '0');
@@ -422,7 +799,7 @@ function updateTimer() {
 }
 
 // ═══════════════════════════════════════════
-//  CONTACTS
+//  CONTACTS (with click-to-dial)
 // ═══════════════════════════════════════════
 const contactModal = $('#contact-modal');
 $('#add-contact-btn').addEventListener('click', () => {
@@ -450,21 +827,25 @@ $('#save-contact-btn').addEventListener('click', async () => {
     obs: $('#contact-obs').value.trim(),
   };
   if (!contact.name) { showToast('Digite o nome do contato', 'warning'); return; }
-  const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}`), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact)
-  });
-  state.contacts = await res.json();
-  renderContacts();
-  contactModal.classList.add('hidden');
-  showToast('Contato salvo!', 'success');
+  try {
+    const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact)
+    });
+    state.contacts = await res.json();
+    renderContacts();
+    contactModal.classList.add('hidden');
+    showToast('Contato salvo!', 'success');
+  } catch (e) { showToast('Erro ao salvar contato', 'error'); }
 });
 
 $('#search-contacts').addEventListener('input', renderContacts);
 
 async function loadContacts() {
-  const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}`));
-  state.contacts = await res.json();
-  renderContacts();
+  try {
+    const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}`));
+    state.contacts = await res.json();
+    renderContacts();
+  } catch (e) { console.warn('Could not load contacts:', e); }
 }
 
 function renderContacts() {
@@ -476,7 +857,12 @@ function renderContacts() {
     $('#contacts-list').innerHTML = `<li class="empty-state"><span class="material-icons-round">contact_phone</span><p>Nenhum contato encontrado</p></li>`;
     return;
   }
-  $('#contacts-list').innerHTML = filtered.map(c => `
+  $('#contacts-list').innerHTML = filtered.map(c => {
+    // Check if contact is online for click-to-dial
+    const onlineUser = state.allUsers.find(u =>
+      u.id !== socket.id && u.username.toLowerCase() === c.name.toLowerCase() && u.status === 'disponível'
+    );
+    return `
     <li class="item" onclick="editContact('${c.id}')">
       <div class="contact-avatar">${c.name.charAt(0).toUpperCase()}</div>
       <div class="entity-info">
@@ -488,12 +874,13 @@ function renderContacts() {
         </div>
       </div>
       <div class="contact-actions">
+        ${onlineUser ? `<button class="btn-ghost" onclick="event.stopPropagation(); initiateCall('${onlineUser.id}','${escHtml(onlineUser.username)}','${escHtml(onlineUser.location || '')}')" title="Ligar" style="color:var(--success)"><span class="material-icons-round">call</span></button>` : ''}
         <button class="btn-ghost text-danger" onclick="event.stopPropagation(); deleteContact('${c.id}')" title="Excluir">
           <span class="material-icons-round">delete</span>
         </button>
       </div>
-    </li>
-  `).join('');
+    </li>`;
+  }).join('');
 }
 
 window.editContact = function(id) {
@@ -512,14 +899,16 @@ window.editContact = function(id) {
 
 window.deleteContact = async function(id) {
   if (!confirm('Excluir este contato?')) return;
-  const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}/${id}`), { method: 'DELETE' });
-  state.contacts = await res.json();
-  renderContacts();
-  showToast('Contato excluído', 'info');
+  try {
+    const res = await fetch(apiUrl(`/api/contacts/${encodeURIComponent(state.username)}/${id}`), { method: 'DELETE' });
+    state.contacts = await res.json();
+    renderContacts();
+    showToast('Contato excluído', 'info');
+  } catch (e) { showToast('Erro ao excluir contato', 'error'); }
 };
 
 // ═══════════════════════════════════════════
-//  HISTORY
+//  HISTORY (with redial)
 // ═══════════════════════════════════════════
 $$('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -531,9 +920,11 @@ $$('.filter-btn').forEach(btn => {
 });
 
 async function loadHistory() {
-  const res = await fetch(apiUrl(`/api/history/${encodeURIComponent(state.username)}`));
-  state.history = await res.json();
-  renderHistory();
+  try {
+    const res = await fetch(apiUrl(`/api/history/${encodeURIComponent(state.username)}`));
+    state.history = await res.json();
+    renderHistory();
+  } catch (e) { console.warn('Could not load history:', e); }
 }
 
 function renderHistory() {
@@ -547,6 +938,8 @@ function renderHistory() {
     const cls = h.type === 'incoming' ? 'incoming' : 'outgoing';
     const label = h.type === 'incoming' ? 'Recebida' : 'Realizada';
     const time = formatDate(h.time);
+    // Check if contact is online for redial
+    const onlineUser = state.allUsers.find(u => u.id !== socket.id && u.username === h.contact && u.status === 'disponível');
     return `
       <li class="item">
         <div class="history-icon ${cls}"><span class="material-icons-round">${icon}</span></div>
@@ -557,7 +950,10 @@ function renderHistory() {
             ${label}
           </div>
         </div>
-        <span class="history-time">${time}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${onlineUser ? `<button class="call-item-btn" style="opacity:1;transform:scale(1);" onclick="initiateCall('${onlineUser.id}','${escHtml(onlineUser.username)}','${escHtml(onlineUser.location || '')}')"><span class="material-icons-round">call</span></button>` : ''}
+          <span class="history-time">${time}</span>
+        </div>
       </li>
     `;
   }).join('');
@@ -578,9 +974,7 @@ $('#search-notes').addEventListener('input', renderNotesList);
 // Toolbar commands
 $$('.tool-btn[data-cmd]').forEach(btn => {
   btn.addEventListener('click', () => {
-    const cmd = btn.dataset.cmd;
-    const val = btn.dataset.value || null;
-    document.execCommand(cmd, false, val);
+    document.execCommand(btn.dataset.cmd, false, btn.dataset.value || null);
     noteEditor.focus();
     autoSaveCurrentNote();
   });
@@ -589,26 +983,19 @@ $$('.tool-btn[data-cmd]').forEach(btn => {
 // Special toolbar actions
 $$('.tool-btn[data-action]').forEach(btn => {
   btn.addEventListener('click', () => {
-    const action = btn.dataset.action;
-    switch (action) {
-      case 'checklist':
-        insertChecklist();
-        break;
-      case 'divider':
-        document.execCommand('insertHTML', false, '<hr>');
-        break;
-      case 'highlight':
+    switch (btn.dataset.action) {
+      case 'checklist': insertChecklist(); break;
+      case 'divider': document.execCommand('insertHTML', false, '<hr>'); break;
+      case 'highlight': {
         const sel = window.getSelection();
-        if (sel.rangeCount && !sel.isCollapsed) {
-          document.execCommand('insertHTML', false, `<mark>${sel.toString()}</mark>`);
-        }
+        if (sel.rangeCount && !sel.isCollapsed) document.execCommand('insertHTML', false, `<mark>${sel.toString()}</mark>`);
         break;
-      case 'code':
-        const sel2 = window.getSelection();
-        if (sel2.rangeCount && !sel2.isCollapsed) {
-          document.execCommand('insertHTML', false, `<code>${sel2.toString()}</code>`);
-        }
+      }
+      case 'code': {
+        const sel = window.getSelection();
+        if (sel.rangeCount && !sel.isCollapsed) document.execCommand('insertHTML', false, `<code>${sel.toString()}</code>`);
         break;
+      }
     }
     noteEditor.focus();
     autoSaveCurrentNote();
@@ -616,16 +1003,12 @@ $$('.tool-btn[data-action]').forEach(btn => {
 });
 
 function insertChecklist() {
-  const html = `<div class="checklist-item"><input type="checkbox" onclick="toggleChecklistItem(this)"><span>Item da checklist</span></div>`;
-  document.execCommand('insertHTML', false, html);
+  document.execCommand('insertHTML', false, `<div class="checklist-item"><input type="checkbox" onclick="toggleChecklistItem(this)"><span>Item da checklist</span></div>`);
 }
 
 window.toggleChecklistItem = function(cb) {
   const item = cb.closest('.checklist-item');
-  if (item) {
-    item.classList.toggle('checked', cb.checked);
-    autoSaveCurrentNote();
-  }
+  if (item) { item.classList.toggle('checked', cb.checked); autoSaveCurrentNote(); }
 };
 
 // Auto-save on typing
@@ -656,7 +1039,9 @@ $('#pin-note-btn').addEventListener('click', () => {
 $('#delete-note-btn').addEventListener('click', async () => {
   if (!state.currentNoteId) return;
   if (!confirm('Excluir esta nota?')) return;
-  await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}/${state.currentNoteId}`), { method: 'DELETE' });
+  try {
+    await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}/${state.currentNoteId}`), { method: 'DELETE' });
+  } catch (e) { /* ignore */ }
   state.notes = state.notes.filter(n => n.id !== state.currentNoteId);
   state.currentNoteId = null;
   editorEmpty.classList.add('active');
@@ -666,19 +1051,15 @@ $('#delete-note-btn').addEventListener('click', async () => {
 });
 
 async function loadNotes() {
-  const res = await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}`));
-  state.notes = await res.json();
-  renderNotesList();
+  try {
+    const res = await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}`));
+    state.notes = await res.json();
+    renderNotesList();
+  } catch (e) { console.warn('Could not load notes:', e); }
 }
 
 function createNewNote() {
-  const note = {
-    id: generateId(),
-    title: '',
-    content: '',
-    category: 'geral',
-    pinned: false,
-  };
+  const note = { id: generateId(), title: '', content: '', category: 'geral', pinned: false };
   state.notes.unshift(note);
   state.currentNoteId = note.id;
   openNoteEditor(note);
@@ -695,14 +1076,9 @@ function openNoteEditor(note) {
   noteEditor.innerHTML = note.content || '';
   noteCategory.value = note.category || 'geral';
   updateCharCount();
-  if (note.updatedAt) {
-    $('#note-date').textContent = `Atualizado: ${formatDate(note.updatedAt)}`;
-  } else {
-    $('#note-date').textContent = '';
-  }
-  // Highlight selected
+  $('#note-date').textContent = note.updatedAt ? `Atualizado: ${formatDate(note.updatedAt)}` : '';
   $$('.notes-entity-list li.item').forEach(li => li.classList.remove('selected'));
-  const el = document.querySelector(`.notes-entity-list li[data-id="${note.id}"]`);
+  const el = $(`.notes-entity-list li[data-id="${note.id}"]`);
   if (el) el.classList.add('selected');
 }
 
@@ -710,27 +1086,20 @@ async function autoSaveCurrentNote() {
   if (!state.currentNoteId) return;
   const note = state.notes.find(n => n.id === state.currentNoteId);
   if (!note) return;
-
   note.title = noteTitleInput.value.trim();
   note.content = noteEditor.innerHTML;
   note.category = noteCategory.value;
-
-  await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(note)
-  });
-
+  try {
+    await fetch(apiUrl(`/api/notes/${encodeURIComponent(state.username)}`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(note)
+    });
+  } catch (e) { console.warn('Could not save note:', e); }
   renderNotesList();
 }
 
 function renderNotesList() {
   const q = ($('#search-notes')?.value || '').toLowerCase();
-  let filtered = state.notes.filter(n =>
-    !q || (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q)
-  );
-
-  // Pinned first
+  let filtered = state.notes.filter(n => !q || (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q));
   filtered.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   if (filtered.length === 0) {
@@ -766,8 +1135,7 @@ window.selectNote = function(id) {
 };
 
 function updateCharCount() {
-  const text = noteEditor.innerText || '';
-  $('#note-chars').textContent = `${text.length} caracteres`;
+  $('#note-chars').textContent = `${(noteEditor.innerText || '').length} caracteres`;
 }
 
 // ═══════════════════════════════════════════
@@ -789,10 +1157,7 @@ function escHtml(str) {
   return d.innerHTML;
 }
 
-// Constrói URL da API (local ou remoto via GitHub Pages)
-function apiUrl(path) {
-  return `${getServerUrl()}${path}`;
-}
+function apiUrl(path) { return `${getServerUrl()}${path}`; }
 
 function stripHtml(html) {
   const d = document.createElement('div');
@@ -800,14 +1165,11 @@ function stripHtml(html) {
   return d.textContent || '';
 }
 
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-}
+function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 9); }
 
 function formatDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDateShort(iso) {
@@ -818,27 +1180,5 @@ function formatDateShort(iso) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
-// ═══ RECONNECTION ═══
-  socket.on('disconnect', () => {
-    DOM.connIndicator.querySelector('.conn-text').textContent = 'Desconectado';
-    DOM.connIndicator.querySelector('.conn-dot').style.background = 'var(--danger)';
-    DOM.connIndicator.style.background = 'var(--danger-light)';
-    DOM.connIndicator.style.color = 'var(--danger)';
-    showToast('Conexão perdida. Reconectando...', 'error');
-  });
-
-  socket.on('connect', () => {
-    DOM.connIndicator.querySelector('.conn-text').textContent = 'Conectado';
-    DOM.connIndicator.querySelector('.conn-dot').style.background = 'var(--success)';
-    DOM.connIndicator.style.background = 'var(--success-light)';
-    DOM.connIndicator.style.color = 'var(--success)';
-    if (state.username) {
-      socket.emit('register', { username: state.username, location: state.location });
-      showToast('Reconectado!', 'success');
-    }
-  });
-
-} // fim setupSocketEvents
-
-// Inicializa os eventos do socket
+// ═══ INIT ═══
 setupSocketEvents();
