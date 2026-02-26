@@ -1180,5 +1180,414 @@ function formatDateShort(iso) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
+// ═══════════════════════════════════════════
+//  SIP ENGINE (JsSIP Integration)
+// ═══════════════════════════════════════════
+let sipUA = null;
+let sipSession = null;
+let sipRegistered = false;
+
+function loadSIPConfig() {
+  try { return JSON.parse(localStorage.getItem('softphone_sip') || '{}'); }
+  catch { return {}; }
+}
+
+function saveSIPConfig(config) {
+  localStorage.setItem('softphone_sip', JSON.stringify(config));
+}
+
+// Populate SIP form from saved config on load
+(function initSIPForm() {
+  const cfg = loadSIPConfig();
+  const fields = { 'sip-server': cfg.server, 'sip-domain': cfg.domain, 'sip-extension': cfg.extension, 'sip-password': cfg.password, 'sip-display-name': cfg.displayName };
+  for (const [id, val] of Object.entries(fields)) {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  }
+})();
+
+// Save config button
+$('#sip-save-btn')?.addEventListener('click', () => {
+  const config = getSIPFormValues();
+  if (!config.server || !config.extension) { showToast('Preencha servidor e ramal', 'warning'); return; }
+  saveSIPConfig(config);
+  showToast('Configuração SIP salva!', 'success');
+});
+
+function getSIPFormValues() {
+  return {
+    server: $('#sip-server')?.value?.trim() || '',
+    domain: $('#sip-domain')?.value?.trim() || '',
+    extension: $('#sip-extension')?.value?.trim() || '',
+    password: $('#sip-password')?.value?.trim() || '',
+    displayName: $('#sip-display-name')?.value?.trim() || ''
+  };
+}
+
+// Connect SIP
+$('#sip-connect-btn')?.addEventListener('click', () => {
+  const config = getSIPFormValues();
+  if (!config.server) { showToast('Informe o servidor WebSocket SIP', 'warning'); return; }
+  if (!config.extension) { showToast('Informe o ramal/extensão', 'warning'); return; }
+  if (!config.domain) config.domain = config.server.replace(/^wss?:\/\//, '').replace(/[:\/].*$/, '');
+  saveSIPConfig(config);
+  sipConnect(config);
+});
+
+// Disconnect SIP
+$('#sip-disconnect-btn')?.addEventListener('click', () => {
+  sipDisconnect();
+});
+
+function sipConnect(config) {
+  if (typeof JsSIP === 'undefined') {
+    showToast('JsSIP não carregou. Recarregue a página.', 'error');
+    return;
+  }
+
+  sipDisconnect(); // cleanup previous
+
+  try {
+    const wsSocket = new JsSIP.WebSocketInterface(config.server);
+
+    sipUA = new JsSIP.UA({
+      sockets: [wsSocket],
+      uri: `sip:${config.extension}@${config.domain}`,
+      password: config.password || '',
+      display_name: config.displayName || config.extension,
+      register: true,
+      session_timers: false,
+      user_agent: 'SoftphonePro/4.0'
+    });
+
+    updateSIPStatus('connecting', 'Conectando ao servidor SIP...');
+
+    sipUA.on('connected', () => {
+      updateSIPStatus('connecting', 'Conectado, registrando...');
+    });
+
+    sipUA.on('registered', () => {
+      sipRegistered = true;
+      updateSIPStatus('registered', `Registrado: ramal ${config.extension}`);
+      showToast(`SIP registrado — ramal ${config.extension}`, 'success');
+    });
+
+    sipUA.on('unregistered', () => {
+      sipRegistered = false;
+      updateSIPStatus('offline', 'Não registrado');
+    });
+
+    sipUA.on('registrationFailed', (e) => {
+      sipRegistered = false;
+      const cause = e.cause || 'Erro desconhecido';
+      updateSIPStatus('error', `Falha: ${cause}`);
+      showToast(`Registro SIP falhou: ${cause}`, 'error');
+    });
+
+    sipUA.on('disconnected', () => {
+      sipRegistered = false;
+      updateSIPStatus('offline', 'Desconectado do servidor SIP');
+    });
+
+    // Incoming SIP calls
+    sipUA.on('newRTCSession', (data) => {
+      if (data.originator === 'remote') {
+        handleIncomingSIPCall(data.session);
+      }
+    });
+
+    sipUA.start();
+
+  } catch (err) {
+    console.error('SIP connect error:', err);
+    showToast('Erro SIP: ' + err.message, 'error');
+    updateSIPStatus('error', 'Erro: ' + err.message);
+  }
+}
+
+function sipDisconnect() {
+  if (sipUA) {
+    try { sipUA.stop(); } catch (e) { console.warn('SIP stop error:', e); }
+    sipUA = null;
+    sipRegistered = false;
+    updateSIPStatus('offline', 'Desconectado');
+    showToast('SIP desconectado', 'info');
+  }
+}
+
+// ═══ SIP OUTGOING CALL ═══
+function sipCall(number) {
+  if (!sipUA || !sipRegistered) {
+    showToast('SIP não está registrado. Configure nas Configurações.', 'warning');
+    return;
+  }
+
+  const config = loadSIPConfig();
+  const domain = config.domain || config.server.replace(/^wss?:\/\//, '').replace(/[:\/].*$/, '');
+  const target = `sip:${number}@${domain}`;
+
+  try {
+    const eventHandlers = {
+      progress: () => {
+        state.currentCallTarget = 'sip-call';
+        state.currentCallName = number;
+        setCallView('calling');
+        DOM.callingName.textContent = number;
+        DOM.callingLocation.textContent = '📡 Via SIP';
+        showToast(`Chamando ${number} via SIP...`, 'info');
+      },
+      accepted: () => {
+        DOM.activeCallName.textContent = number;
+        DOM.activeCallLocation.textContent = '📡 Via SIP';
+        setCallView('active');
+        startCallTimer();
+        showToast(`Em ligação SIP com ${number}`, 'success');
+      },
+      confirmed: () => {
+        // Session is fully established
+      },
+      ended: () => {
+        showToast('Ligação SIP encerrada', 'info');
+        cleanupSIPCall();
+      },
+      failed: (e) => {
+        showToast(`Chamada SIP falhou: ${e.cause || 'Erro'}`, 'error');
+        cleanupSIPCall();
+      },
+      peerconnection: (e) => {
+        // Attach remote audio
+        e.peerconnection.addEventListener('track', (evt) => {
+          if (evt.streams && evt.streams[0]) {
+            DOM.remoteAudio.srcObject = evt.streams[0];
+            if (DOM.volumeSlider) DOM.remoteAudio.volume = DOM.volumeSlider.value / 100;
+          }
+        });
+      }
+    };
+
+    sipSession = sipUA.call(target, {
+      eventHandlers,
+      mediaConstraints: { audio: true, video: false },
+      rtcOfferConstraints: { offerToReceiveAudio: true },
+      pcConfig: iceConfig
+    });
+
+  } catch (err) {
+    console.error('SIP call error:', err);
+    showToast('Erro ao ligar via SIP: ' + err.message, 'error');
+  }
+}
+
+// ═══ SIP INCOMING CALL ═══
+function handleIncomingSIPCall(session) {
+  // DND check
+  if (state.dnd || state.userStatus === 'nao_perturbe') {
+    session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
+    return;
+  }
+  // Already in call
+  if (state.currentCallTarget) {
+    session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
+    return;
+  }
+
+  sipSession = session;
+  const caller = session.remote_identity?.display_name || session.remote_identity?.uri?.user || 'Desconhecido';
+
+  state.currentCallTarget = 'sip-incoming';
+  state.currentCallName = caller;
+  state.pendingCallerId = null; // Not a WebRTC call
+
+  DOM.incomingName.textContent = caller;
+  DOM.incomingLocation.textContent = '📡 Via SIP';
+  setCallView('incoming');
+  startRingtone();
+  showToast(`Chamada SIP de ${caller}`, 'info');
+
+  // Session events
+  session.on('peerconnection', (e) => {
+    e.peerconnection.addEventListener('track', (evt) => {
+      if (evt.streams && evt.streams[0]) {
+        DOM.remoteAudio.srcObject = evt.streams[0];
+        if (DOM.volumeSlider) DOM.remoteAudio.volume = DOM.volumeSlider.value / 100;
+      }
+    });
+  });
+
+  session.on('accepted', () => {
+    stopRingtone();
+    DOM.activeCallName.textContent = caller;
+    DOM.activeCallLocation.textContent = '📡 Via SIP';
+    setCallView('active');
+    startCallTimer();
+    showToast(`Em ligação SIP com ${caller}`, 'success');
+  });
+
+  session.on('failed', (e) => {
+    showToast(`Chamada SIP falhou: ${e.cause || 'Erro'}`, 'error');
+    cleanupSIPCall();
+  });
+
+  session.on('ended', () => {
+    showToast('Ligação SIP encerrada', 'info');
+    cleanupSIPCall();
+  });
+}
+
+function cleanupSIPCall() {
+  sipSession = null;
+  stopRingtone();
+  state.currentCallTarget = null;
+  state.currentCallName = null;
+  state.isMuted = false;
+  state.isOnHold = false;
+  DOM.muteBtn.classList.remove('active');
+  DOM.muteBtn.querySelector('.material-icons-round').textContent = 'mic';
+  if (DOM.holdBtn) {
+    DOM.holdBtn.classList.remove('active');
+    DOM.holdBtn.querySelector('.material-icons-round').textContent = 'pause';
+    DOM.holdBtn.querySelectorAll('span')[1].textContent = 'Espera';
+  }
+  if (DOM.dtmfToggleBtn) DOM.dtmfToggleBtn.classList.remove('active');
+  stopCallTimer();
+  setCallView('idle');
+}
+
+// ═══ SIP Call Controls ═══
+function sipHold() {
+  if (sipSession) {
+    if (state.isOnHold) sipSession.unhold();
+    else sipSession.hold();
+  }
+}
+
+function sipSendDTMF(tone) {
+  if (sipSession) {
+    sipSession.sendDTMF(tone, { duration: 100, interToneGap: 70 });
+  }
+}
+
+function sipEndCall() {
+  if (sipSession) {
+    try { sipSession.terminate(); } catch (e) { console.warn('SIP terminate:', e); }
+    cleanupSIPCall();
+  }
+}
+
+function sipTransfer(targetNumber) {
+  if (sipSession) {
+    const config = loadSIPConfig();
+    const domain = config.domain || '';
+    try {
+      sipSession.refer(`sip:${targetNumber}@${domain}`);
+      showToast(`Transferindo para ${targetNumber}...`, 'info');
+      cleanupSIPCall();
+    } catch (e) {
+      showToast('Erro ao transferir: ' + e.message, 'error');
+    }
+  }
+}
+
+function sipAnswerIncoming() {
+  if (sipSession) {
+    sipSession.answer({
+      mediaConstraints: { audio: true, video: false },
+      pcConfig: iceConfig
+    });
+  }
+}
+
+function sipRejectIncoming() {
+  if (sipSession) {
+    sipSession.terminate({ status_code: 603, reason_phrase: 'Decline' });
+    cleanupSIPCall();
+  }
+}
+
+// ═══ SIP STATUS UI ═══
+function updateSIPStatus(status, text) {
+  const badge = $('#sip-status-badge');
+  if (badge) {
+    badge.style.display = status === 'offline' ? 'none' : 'flex';
+    const dot = badge.querySelector('.sip-badge-dot');
+    const colors = { connecting: 'var(--warning)', registered: 'var(--success)', error: 'var(--danger)' };
+    if (dot) dot.style.background = colors[status] || 'var(--gray-400)';
+  }
+
+  const info = $('#sip-status-info');
+  if (info) {
+    const icons = { offline: 'phone_disabled', connecting: 'sync', registered: 'check_circle', error: 'error' };
+    const cls = { offline: '', connecting: 'sip-info-warn', registered: 'sip-info-ok', error: 'sip-info-err' };
+    info.className = `sip-status-card ${cls[status] || ''}`;
+    info.innerHTML = `<span class="material-icons-round">${icons[status] || 'info'}</span><span>${text}</span>`;
+  }
+
+  const connectBtn = $('#sip-connect-btn');
+  const disconnectBtn = $('#sip-disconnect-btn');
+  if (connectBtn) connectBtn.style.display = status === 'registered' ? 'none' : 'inline-flex';
+  if (disconnectBtn) disconnectBtn.style.display = status === 'registered' ? 'inline-flex' : 'none';
+}
+
+// ═══ MODIFY EXISTING CONTROLS FOR SIP ═══
+
+// Override Accept/Reject for SIP incoming
+const origAcceptClick = DOM.acceptCallBtn.onclick;
+DOM.acceptCallBtn.addEventListener('click', () => {
+  if (state.currentCallTarget === 'sip-incoming') {
+    stopRingtone();
+    sipAnswerIncoming();
+    return;
+  }
+  // WebRTC accept already handled by the existing listener
+}, true); // capture phase to intercept first
+
+DOM.rejectCallBtn.addEventListener('click', () => {
+  if (state.currentCallTarget === 'sip-incoming') {
+    stopRingtone();
+    sipRejectIncoming();
+    return;
+  }
+}, true);
+
+// Override End Call for SIP
+DOM.endCallBtn.addEventListener('click', () => {
+  if (sipSession) { sipEndCall(); return; }
+}, true);
+
+DOM.cancelCallBtn.addEventListener('click', () => {
+  if (sipSession) { sipEndCall(); return; }
+}, true);
+
+// Override Hold for SIP
+if (DOM.holdBtn) {
+  DOM.holdBtn.addEventListener('click', () => {
+    if (sipSession) { sipHold(); }
+  }, true);
+}
+
+// Modify dial pad to call via SIP when registered
+const origDtmfCallBtn = $('#dtmf-call-btn');
+if (origDtmfCallBtn) {
+  origDtmfCallBtn.addEventListener('click', () => {
+    if (sipRegistered && state.dtmfInput && !state.allUsers.find(u =>
+      u.id !== socket.id && u.status === 'disponível' &&
+      (u.username.toLowerCase().includes(state.dtmfInput.toLowerCase()))
+    )) {
+      // No matching online user — call via SIP
+      sipCall(state.dtmfInput);
+    }
+  }, true);
+}
+
+// Send DTMF via SIP during SIP call
+$$('.dtmf-key').forEach(key => {
+  key.addEventListener('click', () => {
+    if (sipSession) {
+      sipSendDTMF(key.dataset.tone);
+    }
+  }, true);
+});
+
 // ═══ INIT ═══
 setupSocketEvents();
+

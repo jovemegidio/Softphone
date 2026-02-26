@@ -51,7 +51,7 @@
             Conectar ao Sistema
           </button>
         </form>
-        <p class="login-footer">v2.0 — Comunicação segura via WebRTC</p>
+        <p class="login-footer">v4.0 — WebRTC + SIP Engine</p>
         <script>
           // Mostra campo de servidor se estiver no GitHub Pages
           if (window.location.hostname.includes('github.io')) {
@@ -80,6 +80,10 @@
           <div class="connection-indicator" id="conn-indicator">
             <span class="conn-dot"></span>
             <span class="conn-text">Conectado</span>
+          </div>
+          <div id="sip-status-badge" class="sip-badge" style="display:none;">
+            <span class="sip-badge-dot"></span>
+            <span class="sip-badge-text">SIP</span>
           </div>
           <select id="user-status" class="status-select">
             <option value="disponível">🟢 Disponível</option>
@@ -127,10 +131,10 @@
             </li>
           </ul>
           <div class="sidebar-bottom">
-            <div class="nav-item" data-tab="settings" style="opacity:0.5;cursor:default;">
+            <li class="nav-item" data-tab="settings">
               <span class="material-icons-round">settings</span>
               <span class="nav-label">Config.</span>
-            </div>
+            </li>
           </div>
         </nav>
 
@@ -411,6 +415,107 @@
             </div>
           </div>
 
+          <!-- ===== ABA CONFIGURAÇÕES ===== -->
+          <div id="tab-settings" class="tab-panel">
+            <div class="panel-full settings-panel">
+              <div class="panel-header">
+                <h2>Configurações</h2>
+              </div>
+              <div class="settings-scroll">
+
+                <!-- SIP Config -->
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span class="material-icons-round">phone_in_talk</span>
+                    <h3>Configuração SIP / PABX</h3>
+                  </div>
+                  <p class="settings-desc">Conecte a um servidor SIP (Asterisk, FreeSWITCH, NeWave) para fazer e receber ligações reais via telefonia IP.</p>
+
+                  <div class="settings-form">
+                    <div class="form-field">
+                      <label>Servidor WebSocket</label>
+                      <div class="input-icon">
+                        <span class="material-icons-round">dns</span>
+                        <input type="text" id="sip-server" placeholder="wss://pbx.exemplo.com:8089/ws">
+                      </div>
+                    </div>
+                    <div class="form-row">
+                      <div class="form-field">
+                        <label>Domínio SIP</label>
+                        <input type="text" id="sip-domain" placeholder="pbx.exemplo.com">
+                      </div>
+                      <div class="form-field">
+                        <label>Ramal / Extensão</label>
+                        <input type="text" id="sip-extension" placeholder="1001">
+                      </div>
+                    </div>
+                    <div class="form-row">
+                      <div class="form-field">
+                        <label>Senha SIP</label>
+                        <input type="password" id="sip-password" placeholder="••••••••">
+                      </div>
+                      <div class="form-field">
+                        <label>Nome de Exibição</label>
+                        <input type="text" id="sip-display-name" placeholder="Operador">
+                      </div>
+                    </div>
+
+                    <div class="settings-actions">
+                      <button class="btn btn-primary" id="sip-connect-btn">
+                        <span class="material-icons-round">phone_in_talk</span> Registrar SIP
+                      </button>
+                      <button class="btn btn-danger" id="sip-disconnect-btn" style="display:none;">
+                        <span class="material-icons-round">phone_disabled</span> Desconectar
+                      </button>
+                      <button class="btn btn-secondary" id="sip-save-btn">
+                        <span class="material-icons-round">save</span> Salvar Config
+                      </button>
+                    </div>
+
+                    <div class="sip-status-card" id="sip-status-info">
+                      <span class="material-icons-round">info</span>
+                      <span>SIP não configurado. Preencha os campos acima e clique em Registrar.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ICE Config -->
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span class="material-icons-round">public</span>
+                    <h3>Servidores ICE (STUN/TURN)</h3>
+                  </div>
+                  <p class="settings-desc">NAT traversal para chamadas entre redes diferentes. Configuração padrão funciona para a maioria dos casos.</p>
+                  <div class="settings-form">
+                    <div class="form-field">
+                      <label>STUN Server</label>
+                      <input type="text" value="stun:stun.l.google.com:19302" disabled style="opacity:0.6">
+                    </div>
+                    <div class="form-field">
+                      <label>TURN Server</label>
+                      <input type="text" value="turn:openrelay.metered.ca:443" disabled style="opacity:0.6">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- About -->
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span class="material-icons-round">info</span>
+                    <h3>Sobre o Sistema</h3>
+                  </div>
+                  <p class="settings-desc">
+                    <strong>Softphone Pro v4.0</strong> — SIP Edition<br>
+                    WebRTC P2P + JsSIP para PABX real<br>
+                    DTMF · Hold · Transfer · DND · Conferência<br>
+                    <br>Desenvolvido por <strong>Egídio</strong>
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -439,28 +544,39 @@
     <span class="toast-msg"></span>
   </div>
 
-  <!-- Socket.IO: tenta carregar do servidor local, fallback para CDN (GitHub Pages) -->
-  <script src="/socket.io/socket.io.js" onerror="loadSocketCDN()"></script>
+  <!-- JsSIP para integração SIP/PABX -->
+  <script src="https://cdn.jsdelivr.net/npm/jssip@3.10.1/dist/jssip.min.js"></script>
+
+  <!-- Loader robusto: Socket.IO + App (IIFE elimina race condition) -->
   <script>
-    var _appLoaded = false;
-    function loadSocketCDN() {
-      _appLoaded = true;
+  (function() {
+    var loaded = false;
+    function loadApp() {
+      if (loaded) return;
+      loaded = true;
       var s = document.createElement('script');
-      s.src = 'https://cdn.socket.io/4.7.4/socket.io.min.js';
-      s.onload = function() {
-        var a = document.createElement('script');
-        a.src = 'js/app.js';
-        document.body.appendChild(a);
+      s.src = 'js/app.js';
+      s.onerror = function() { console.error('Falha ao carregar app.js'); };
+      document.body.appendChild(s);
+    }
+    // Tenta carregar Socket.IO do servidor local
+    var local = document.createElement('script');
+    local.src = '/socket.io/socket.io.js';
+    local.onload = function() { loadApp(); };
+    local.onerror = function() {
+      // Fallback: CDN (para GitHub Pages ou servidor offline)
+      var cdn = document.createElement('script');
+      cdn.src = 'https://cdn.socket.io/4.7.4/socket.io.min.js';
+      cdn.onload = function() { loadApp(); };
+      cdn.onerror = function() {
+        console.error('Socket.IO não pôde ser carregado');
+        var btn = document.getElementById('login-btn');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">error</span> Servidor offline'; }
       };
-      document.head.appendChild(s);
-    }
-    // Se socket.io carregou do servidor local, carrega app.js normalmente
-    if (typeof io !== 'undefined' && !_appLoaded) {
-      _appLoaded = true;
-      var a = document.createElement('script');
-      a.src = 'js/app.js';
-      document.body.appendChild(a);
-    }
+      document.head.appendChild(cdn);
+    };
+    document.head.appendChild(local);
+  })();
   </script>
 
   <!-- Particle Network Animation -->
