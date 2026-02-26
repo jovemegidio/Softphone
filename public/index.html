@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Softphone Pro</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ========== TELA DE LOGIN ========== -->
+  <div id="login-screen" class="screen active">
+    <div class="login-bg">
+      <div class="login-card">
+        <div class="login-brand">
+          <div class="brand-icon">
+            <span class="material-icons-round">phone_in_talk</span>
+          </div>
+          <h1>Softphone <span>Pro</span></h1>
+          <p class="brand-tagline">Sistema de Comunicação Empresarial</p>
+        </div>
+        <form id="login-form" class="login-form">
+          <div class="form-field">
+            <label for="username-input">Nome de Operador</label>
+            <div class="input-icon">
+              <span class="material-icons-round">person</span>
+              <input type="text" id="username-input" placeholder="Digite seu nome" maxlength="30" autocomplete="off" required>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="location-input">Localização (Cidade/Estado)</label>
+            <div class="input-icon">
+              <span class="material-icons-round">location_on</span>
+              <input type="text" id="location-input" placeholder="Ex: São Paulo, SP" maxlength="50" autocomplete="off">
+            </div>
+          </div>
+          <!-- Campo de servidor (visível quando acessar via GitHub Pages) -->
+          <div class="form-field" id="server-field" style="display:none;">
+            <label for="server-input">Endereço do Servidor</label>
+            <div class="input-icon">
+              <span class="material-icons-round">dns</span>
+              <input type="text" id="server-input" placeholder="Ex: http://seu-ip:3000" autocomplete="off">
+            </div>
+            <p style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">IP do servidor Node.js onde o Softphone está rodando</p>
+          </div>
+          <button type="submit" id="login-btn" class="btn btn-primary btn-full">
+            <span class="material-icons-round">login</span>
+            Conectar ao Sistema
+          </button>
+        </form>
+        <p class="login-footer">v2.0 — Comunicação segura via WebRTC</p>
+        <script>
+          // Mostra campo de servidor se estiver no GitHub Pages
+          if (window.location.hostname.includes('github.io')) {
+            document.getElementById('server-field').style.display = 'block';
+            var saved = localStorage.getItem('softphone_server');
+            if (saved) document.getElementById('server-input').value = saved;
+          }
+        </script>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TELA PRINCIPAL ========== -->
+  <div id="main-screen" class="screen">
+    <div class="app-shell">
+
+      <!-- NAVBAR TOPO -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-brand">
+            <span class="material-icons-round brand-sm-icon">phone_in_talk</span>
+            <span class="brand-sm-text">Softphone <strong>Pro</strong></span>
+          </div>
+        </div>
+        <div class="topbar-center">
+          <div class="connection-indicator" id="conn-indicator">
+            <span class="conn-dot"></span>
+            <span class="conn-text">Conectado</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-user">
+            <span class="material-icons-round">location_on</span>
+            <span id="topbar-location" class="topbar-loc">—</span>
+          </div>
+          <div class="topbar-divider"></div>
+          <div class="topbar-user">
+            <div class="avatar-sm" id="topbar-avatar">U</div>
+            <span id="topbar-username">Operador</span>
+          </div>
+          <button id="logout-btn" class="btn-ghost" title="Encerrar sessão">
+            <span class="material-icons-round">logout</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="app-body">
+
+        <!-- SIDEBAR NAVEGAÇÃO -->
+        <nav class="sidebar">
+          <ul class="nav-list">
+            <li class="nav-item active" data-tab="phone">
+              <span class="material-icons-round">call</span>
+              <span class="nav-label">Telefone</span>
+            </li>
+            <li class="nav-item" data-tab="contacts">
+              <span class="material-icons-round">contacts</span>
+              <span class="nav-label">Contatos</span>
+            </li>
+            <li class="nav-item" data-tab="history">
+              <span class="material-icons-round">history</span>
+              <span class="nav-label">Histórico</span>
+            </li>
+            <li class="nav-item" data-tab="notes">
+              <span class="material-icons-round">edit_note</span>
+              <span class="nav-label">Bloco de Notas</span>
+            </li>
+          </ul>
+          <div class="sidebar-bottom">
+            <div class="nav-item" data-tab="settings" style="opacity:0.5;cursor:default;">
+              <span class="material-icons-round">settings</span>
+              <span class="nav-label">Config.</span>
+            </div>
+          </div>
+        </nav>
+
+        <!-- CONTEÚDO PRINCIPAL -->
+        <div class="content-area">
+
+          <!-- ===== ABA TELEFONE ===== -->
+          <div id="tab-phone" class="tab-panel active">
+            <div class="panel-split">
+
+              <!-- Esquerda: Lista de usuários -->
+              <div class="panel-list">
+                <div class="panel-header">
+                  <h2>Usuários Online</h2>
+                  <span class="badge" id="user-count">0</span>
+                </div>
+                <div class="search-box">
+                  <span class="material-icons-round">search</span>
+                  <input type="text" id="search-users" placeholder="Buscar usuários...">
+                </div>
+                <ul id="user-list" class="entity-list">
+                  <li class="empty-state">
+                    <span class="material-icons-round">group_off</span>
+                    <p>Nenhum usuário online</p>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Direita: Área de chamada -->
+              <div class="panel-main">
+                <!-- Idle -->
+                <div id="call-idle" class="call-view active">
+                  <div class="call-view-inner">
+                    <span class="material-icons-round hero-icon">support_agent</span>
+                    <h2>Central de Chamadas</h2>
+                    <p>Selecione um usuário para iniciar uma ligação.<br>Chamadas funcionam entre cidades e estados via internet.</p>
+                  </div>
+                </div>
+                <!-- Calling -->
+                <div id="call-calling" class="call-view">
+                  <div class="call-view-inner">
+                    <div class="call-pulse"><div class="call-pulse-avatar"><span class="material-icons-round">call</span></div></div>
+                    <h2>Chamando <span id="calling-name">...</span></h2>
+                    <p class="call-sub" id="calling-location"></p>
+                    <p class="call-status-text">Aguardando resposta...</p>
+                    <button id="cancel-call-btn" class="btn btn-danger btn-circle"><span class="material-icons-round">call_end</span></button>
+                  </div>
+                </div>
+                <!-- Incoming -->
+                <div id="call-incoming" class="call-view">
+                  <div class="call-view-inner">
+                    <div class="call-pulse incoming"><div class="call-pulse-avatar"><span class="material-icons-round">ring_volume</span></div></div>
+                    <h2><span id="incoming-name">...</span></h2>
+                    <p class="call-sub" id="incoming-location"></p>
+                    <p class="call-status-text">Chamada recebida</p>
+                    <div class="incoming-btns">
+                      <button id="reject-call-btn" class="btn btn-danger btn-circle"><span class="material-icons-round">call_end</span></button>
+                      <button id="accept-call-btn" class="btn btn-success btn-circle"><span class="material-icons-round">call</span></button>
+                    </div>
+                  </div>
+                </div>
+                <!-- In Call -->
+                <div id="call-active" class="call-view">
+                  <div class="call-view-inner">
+                    <div class="active-call-avatar"><span class="material-icons-round">person</span></div>
+                    <h2 id="active-call-name">...</h2>
+                    <p class="call-sub" id="active-call-location"></p>
+                    <div class="call-timer" id="call-timer">00:00</div>
+                    <div class="call-controls">
+                      <button id="mute-btn" class="btn-ctrl" title="Mutar">
+                        <span class="material-icons-round">mic</span>
+                        <span>Mudo</span>
+                      </button>
+                      <button id="end-call-btn" class="btn btn-danger btn-circle btn-circle-lg"><span class="material-icons-round">call_end</span></button>
+                      <button id="speaker-btn" class="btn-ctrl" title="Alto-falante">
+                        <span class="material-icons-round">volume_up</span>
+                        <span>Volume</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ===== ABA CONTATOS ===== -->
+          <div id="tab-contacts" class="tab-panel">
+            <div class="panel-full">
+              <div class="panel-header">
+                <h2>Contatos</h2>
+                <button class="btn btn-primary btn-sm" id="add-contact-btn">
+                  <span class="material-icons-round">person_add</span> Novo Contato
+                </button>
+              </div>
+              <div class="search-box">
+                <span class="material-icons-round">search</span>
+                <input type="text" id="search-contacts" placeholder="Buscar contatos...">
+              </div>
+              <ul id="contacts-list" class="entity-list">
+                <li class="empty-state">
+                  <span class="material-icons-round">contact_phone</span>
+                  <p>Nenhum contato salvo</p>
+                </li>
+              </ul>
+            </div>
+            <!-- Modal de contato -->
+            <div id="contact-modal" class="modal-overlay hidden">
+              <div class="modal">
+                <div class="modal-header">
+                  <h3 id="contact-modal-title">Novo Contato</h3>
+                  <button class="btn-ghost modal-close" id="close-contact-modal"><span class="material-icons-round">close</span></button>
+                </div>
+                <div class="modal-body">
+                  <div class="form-field"><label>Nome</label><input type="text" id="contact-name" placeholder="Nome completo"></div>
+                  <div class="form-field"><label>Empresa</label><input type="text" id="contact-company" placeholder="Empresa / Organização"></div>
+                  <div class="form-field"><label>Telefone</label><input type="text" id="contact-phone" placeholder="(00) 00000-0000"></div>
+                  <div class="form-field"><label>Email</label><input type="email" id="contact-email" placeholder="email@exemplo.com"></div>
+                  <div class="form-field"><label>Cidade/Estado</label><input type="text" id="contact-location" placeholder="Cidade, UF"></div>
+                  <div class="form-field"><label>Observações</label><textarea id="contact-obs" rows="3" placeholder="Anotações sobre o contato..."></textarea></div>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn btn-secondary" id="cancel-contact-modal">Cancelar</button>
+                  <button class="btn btn-primary" id="save-contact-btn">Salvar Contato</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== ABA HISTÓRICO ===== -->
+          <div id="tab-history" class="tab-panel">
+            <div class="panel-full">
+              <div class="panel-header">
+                <h2>Histórico de Chamadas</h2>
+                <div class="header-filters">
+                  <button class="filter-btn active" data-filter="all">Todas</button>
+                  <button class="filter-btn" data-filter="incoming">Recebidas</button>
+                  <button class="filter-btn" data-filter="outgoing">Realizadas</button>
+                </div>
+              </div>
+              <ul id="history-list" class="entity-list">
+                <li class="empty-state">
+                  <span class="material-icons-round">call_missed</span>
+                  <p>Nenhuma chamada registrada</p>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- ===== ABA BLOCO DE NOTAS ===== -->
+          <div id="tab-notes" class="tab-panel">
+            <div class="notes-layout">
+
+              <!-- Lista de notas -->
+              <div class="notes-sidebar">
+                <div class="panel-header">
+                  <h2>Notas</h2>
+                  <button class="btn btn-primary btn-sm" id="new-note-btn">
+                    <span class="material-icons-round">add</span> Nova
+                  </button>
+                </div>
+                <div class="search-box">
+                  <span class="material-icons-round">search</span>
+                  <input type="text" id="search-notes" placeholder="Buscar notas...">
+                </div>
+                <ul id="notes-list" class="entity-list notes-entity-list">
+                  <li class="empty-state">
+                    <span class="material-icons-round">note_add</span>
+                    <p>Nenhuma nota criada</p>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Editor de nota -->
+              <div class="notes-editor">
+                <div id="editor-empty" class="editor-placeholder active">
+                  <span class="material-icons-round">edit_note</span>
+                  <h3>Bloco de Notas</h3>
+                  <p>Selecione ou crie uma nota para começar a editar</p>
+                </div>
+                <div id="editor-active" class="editor-content hidden">
+                  <div class="editor-topbar">
+                    <input type="text" id="note-title-input" class="note-title-input" placeholder="Título da nota...">
+                    <div class="editor-actions">
+                      <select id="note-category" class="note-cat-select">
+                        <option value="geral">📋 Geral</option>
+                        <option value="ligação">📞 Ligação</option>
+                        <option value="reunião">📅 Reunião</option>
+                        <option value="tarefa">✅ Tarefa</option>
+                        <option value="importante">⭐ Importante</option>
+                        <option value="pessoal">👤 Pessoal</option>
+                      </select>
+                      <button class="btn-ghost" id="pin-note-btn" title="Fixar nota"><span class="material-icons-round">push_pin</span></button>
+                      <button class="btn-ghost text-danger" id="delete-note-btn" title="Excluir nota"><span class="material-icons-round">delete</span></button>
+                    </div>
+                  </div>
+                  <!-- Toolbar do editor -->
+                  <div class="editor-toolbar">
+                    <button class="tool-btn" data-cmd="bold" title="Negrito"><span class="material-icons-round">format_bold</span></button>
+                    <button class="tool-btn" data-cmd="italic" title="Itálico"><span class="material-icons-round">format_italic</span></button>
+                    <button class="tool-btn" data-cmd="underline" title="Sublinhado"><span class="material-icons-round">format_underlined</span></button>
+                    <button class="tool-btn" data-cmd="strikeThrough" title="Riscado"><span class="material-icons-round">strikethrough_s</span></button>
+                    <div class="tool-sep"></div>
+                    <button class="tool-btn" data-cmd="insertUnorderedList" title="Lista"><span class="material-icons-round">format_list_bulleted</span></button>
+                    <button class="tool-btn" data-cmd="insertOrderedList" title="Lista numerada"><span class="material-icons-round">format_list_numbered</span></button>
+                    <button class="tool-btn" data-action="checklist" title="Checklist"><span class="material-icons-round">checklist</span></button>
+                    <div class="tool-sep"></div>
+                    <button class="tool-btn" data-cmd="formatBlock" data-value="H2" title="Título"><span class="material-icons-round">title</span></button>
+                    <button class="tool-btn" data-cmd="formatBlock" data-value="BLOCKQUOTE" title="Citação"><span class="material-icons-round">format_quote</span></button>
+                    <button class="tool-btn" data-action="divider" title="Divisor"><span class="material-icons-round">horizontal_rule</span></button>
+                    <div class="tool-sep"></div>
+                    <button class="tool-btn" data-action="highlight" title="Destaque"><span class="material-icons-round">highlight</span></button>
+                    <button class="tool-btn" data-action="code" title="Código"><span class="material-icons-round">code</span></button>
+                  </div>
+                  <div id="note-editor" class="note-body" contenteditable="true" placeholder="Comece a escrever sua nota..."></div>
+                  <div class="editor-footer">
+                    <span id="note-date" class="note-date-info"></span>
+                    <span id="note-chars" class="note-char-count">0 caracteres</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <audio id="remote-audio" autoplay></audio>
+
+  <!-- Toast -->
+  <div id="toast" class="toast">
+    <span class="material-icons-round toast-icon">info</span>
+    <span class="toast-msg"></span>
+  </div>
+
+  <!-- Socket.IO: tenta carregar do servidor local, fallback para CDN (GitHub Pages) -->
+  <script src="/socket.io/socket.io.js" onerror="loadSocketCDN()"></script>
+  <script>
+    function loadSocketCDN() {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.socket.io/4.7.4/socket.io.min.js';
+      s.onload = function() { loadApp(); };
+      document.head.appendChild(s);
+    }
+    function loadApp() {
+      var s = document.createElement('script');
+      s.src = 'js/app.js';
+      document.body.appendChild(s);
+    }
+    // Se socket.io carregou do servidor local, carrega o app normalmente
+    if (typeof io !== 'undefined') { /* app.js será carregado pelo tag abaixo */ }
+  </script>
+  <script src="js/app.js"></script>
+</body>
+</html>
