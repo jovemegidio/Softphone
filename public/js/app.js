@@ -1588,6 +1588,352 @@ $$('.dtmf-key').forEach(key => {
   }, true);
 });
 
+// ═══════════════════════════════════════════
+//  LEADS & CAMPANHAS
+// ═══════════════════════════════════════════
+const leadsState = {
+  leads: JSON.parse(localStorage.getItem('softphone_leads') || '[]'),
+  campaigns: JSON.parse(localStorage.getItem('softphone_campaigns') || '[]'),
+  filter: 'all',
+  searchQuery: '',
+  campaignSearch: '',
+  editingLeadId: null,
+  editingCampaignId: null
+};
+
+function saveLeads() { localStorage.setItem('softphone_leads', JSON.stringify(leadsState.leads)); }
+function saveCampaigns() { localStorage.setItem('softphone_campaigns', JSON.stringify(leadsState.campaigns)); }
+
+// ── KPI Update ──
+function updateLeadKPIs() {
+  const l = leadsState.leads;
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setVal('kpi-total', l.length);
+  setVal('kpi-waiting', l.filter(x => x.status === 'waiting').length);
+  setVal('kpi-b2c', l.filter(x => x.type === 'B2C').length);
+  setVal('kpi-b2b', l.filter(x => x.type === 'B2B').length);
+  setVal('kpi-converted', l.filter(x => x.status === 'converted').length);
+  setVal('kpi-lost', l.filter(x => x.status === 'lost').length);
+}
+
+// ── Render Campaign List ──
+function renderCampaigns() {
+  const list = $('#campaign-list');
+  const countEl = $('#campaign-count');
+  if (!list) return;
+
+  const q = leadsState.campaignSearch.toLowerCase();
+  const filtered = leadsState.campaigns.filter(c => !q || c.name.toLowerCase().includes(q));
+  if (countEl) countEl.textContent = leadsState.campaigns.length;
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<li class="empty-state"><span class="material-icons-round">campaign</span><p>Nenhuma campanha</p></li>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(c => {
+    const leadCount = leadsState.leads.filter(l => l.campaignId === c.id).length;
+    const typeIcon = c.type === 'B2B' ? 'business' : c.type === 'B2C' ? 'person' : 'groups';
+    return `<li class="campaign-item" data-campaign-id="${c.id}">
+      <div class="campaign-icon ${c.type.toLowerCase()}"><span class="material-icons-round">${typeIcon}</span></div>
+      <div class="campaign-info">
+        <div class="campaign-name">${esc(c.name)}</div>
+        <div class="campaign-meta">
+          <span class="campaign-status-dot ${c.status}"></span>
+          <span>${c.type}</span>
+          <span>·</span>
+          <span>${c.status === 'active' ? 'Ativa' : c.status === 'paused' ? 'Pausada' : 'Finalizada'}</span>
+        </div>
+      </div>
+      <span class="campaign-leads-count">${leadCount} lead${leadCount !== 1 ? 's' : ''}</span>
+    </li>`;
+  }).join('');
+
+  // Click to edit campaign
+  list.querySelectorAll('.campaign-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const c = leadsState.campaigns.find(x => x.id === item.dataset.campaignId);
+      if (c) openCampaignModal(c);
+    });
+  });
+}
+
+// ── Render City List ──
+function renderCityLeads() {
+  const list = $('#city-lead-list');
+  const countEl = $('#city-count');
+  if (!list) return;
+
+  const cityMap = {};
+  leadsState.leads.forEach(l => {
+    const city = l.city || 'Não informada';
+    if (!cityMap[city]) cityMap[city] = { total: 0, waiting: 0 };
+    cityMap[city].total++;
+    if (l.status === 'waiting') cityMap[city].waiting++;
+  });
+
+  const cities = Object.entries(cityMap).sort((a, b) => b[1].total - a[1].total);
+  if (countEl) countEl.textContent = cities.length;
+  const maxTotal = cities.length ? Math.max(...cities.map(c => c[1].total)) : 1;
+
+  if (cities.length === 0) {
+    list.innerHTML = '<li class="empty-state"><span class="material-icons-round">map</span><p>Sem dados</p></li>';
+    return;
+  }
+
+  list.innerHTML = cities.map(([name, data]) => {
+    const pct = Math.round((data.total / maxTotal) * 100);
+    return `<li class="city-item">
+      <div class="city-icon"><span class="material-icons-round">location_on</span></div>
+      <div class="city-info">
+        <div class="city-name">${esc(name)}</div>
+        <div class="city-counts"><span>${data.total} lead${data.total !== 1 ? 's' : ''}</span><span>·</span><span>${data.waiting} em espera</span></div>
+      </div>
+      <div class="city-bar-wrap"><div class="city-bar" style="width:${pct}%"></div></div>
+    </li>`;
+  }).join('');
+}
+
+// ── Render Lead Table ──
+function renderLeadTable() {
+  const tbody = $('#leads-tbody');
+  if (!tbody) return;
+
+  const q = leadsState.searchQuery.toLowerCase();
+  let filtered = leadsState.leads;
+
+  if (leadsState.filter !== 'all') {
+    filtered = filtered.filter(l => l.status === leadsState.filter);
+  }
+  if (q) {
+    filtered = filtered.filter(l =>
+      (l.name || '').toLowerCase().includes(q) ||
+      (l.company || '').toLowerCase().includes(q) ||
+      (l.city || '').toLowerCase().includes(q) ||
+      (l.phone || '').includes(q)
+    );
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr class="leads-empty-row"><td colspan="7">
+      <div class="empty-state"><span class="material-icons-round">person_search</span><p>Nenhum lead encontrado</p></div>
+    </td></tr>`;
+    return;
+  }
+
+  const statusLabels = { waiting: '⏳ Espera', contacted: '📞 Contactado', converted: '✅ Convertido', lost: '❌ Perdido' };
+
+  tbody.innerHTML = filtered.map(l => {
+    const campaign = leadsState.campaigns.find(c => c.id === l.campaignId);
+    return `<tr data-lead-id="${l.id}">
+      <td class="lead-name-cell">${esc(l.name || '—')}</td>
+      <td><span class="lead-type-badge ${l.type.toLowerCase()}">${l.type}</span></td>
+      <td>${esc(l.company || '—')}</td>
+      <td>${esc(l.city || '—')}</td>
+      <td>${campaign ? esc(campaign.name) : '—'}</td>
+      <td><span class="lead-status-badge ${l.status}">${statusLabels[l.status] || l.status}</span></td>
+      <td class="lead-actions">
+        <button class="btn-ghost lead-call-btn" title="Ligar" data-phone="${esc(l.phone || '')}"><span class="material-icons-round">call</span></button>
+        <button class="btn-ghost lead-edit-btn" title="Editar" data-id="${l.id}"><span class="material-icons-round">edit</span></button>
+        <button class="btn-ghost text-danger lead-delete-btn" title="Excluir" data-id="${l.id}"><span class="material-icons-round">delete</span></button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Event delegation for actions
+  tbody.querySelectorAll('.lead-call-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const phone = btn.dataset.phone;
+      if (phone) {
+        if (sipRegistered) sipCall(phone);
+        else { state.dtmfInput = phone; showToast(`Número ${phone} copiado para o discador`, 'info'); }
+      }
+    });
+  });
+  tbody.querySelectorAll('.lead-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const lead = leadsState.leads.find(l => l.id === btn.dataset.id);
+      if (lead) openLeadModal(lead);
+    });
+  });
+  tbody.querySelectorAll('.lead-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      leadsState.leads = leadsState.leads.filter(l => l.id !== btn.dataset.id);
+      saveLeads();
+      refreshLeadsUI();
+      showToast('Lead excluído', 'info');
+    });
+  });
+}
+
+function refreshLeadsUI() {
+  updateLeadKPIs();
+  renderCampaigns();
+  renderCityLeads();
+  renderLeadTable();
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ── Lead Modal ──
+function openLeadModal(lead) {
+  leadsState.editingLeadId = lead ? lead.id : null;
+  const title = $('#lead-modal-title');
+  if (title) title.textContent = lead ? 'Editar Lead' : 'Novo Lead';
+
+  $('#lead-name').value = lead ? lead.name || '' : '';
+  $('#lead-type').value = lead ? lead.type : 'B2C';
+  $('#lead-company').value = lead ? lead.company || '' : '';
+  $('#lead-phone').value = lead ? lead.phone || '' : '';
+  $('#lead-email').value = lead ? lead.email || '' : '';
+  $('#lead-city').value = lead ? lead.city || '' : '';
+  $('#lead-obs').value = lead ? lead.obs || '' : '';
+  $('#lead-status').value = lead ? lead.status : 'waiting';
+
+  // Populate campaign dropdown
+  const sel = $('#lead-campaign');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Sem campanha —</option>' +
+      leadsState.campaigns.map(c => `<option value="${c.id}" ${lead && lead.campaignId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  }
+
+  $('#lead-modal').classList.remove('hidden');
+}
+
+$('#add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
+$('#close-lead-modal')?.addEventListener('click', () => $('#lead-modal').classList.add('hidden'));
+$('#cancel-lead-modal')?.addEventListener('click', () => $('#lead-modal').classList.add('hidden'));
+
+$('#save-lead-btn')?.addEventListener('click', () => {
+  const name = $('#lead-name').value.trim();
+  if (!name) { showToast('Informe o nome do lead', 'warning'); return; }
+
+  const data = {
+    id: leadsState.editingLeadId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name,
+    type: $('#lead-type').value,
+    company: $('#lead-company').value.trim(),
+    phone: $('#lead-phone').value.trim(),
+    email: $('#lead-email').value.trim(),
+    city: $('#lead-city').value.trim(),
+    campaignId: $('#lead-campaign').value || null,
+    status: $('#lead-status').value,
+    obs: $('#lead-obs').value.trim(),
+    createdAt: leadsState.editingLeadId ? (leadsState.leads.find(l => l.id === leadsState.editingLeadId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
+  };
+
+  if (leadsState.editingLeadId) {
+    const idx = leadsState.leads.findIndex(l => l.id === leadsState.editingLeadId);
+    if (idx >= 0) leadsState.leads[idx] = data;
+  } else {
+    leadsState.leads.push(data);
+  }
+
+  saveLeads();
+  refreshLeadsUI();
+  $('#lead-modal').classList.add('hidden');
+  showToast(leadsState.editingLeadId ? 'Lead atualizado!' : 'Lead cadastrado!', 'success');
+  leadsState.editingLeadId = null;
+});
+
+// ── Campaign Modal ──
+function openCampaignModal(campaign) {
+  leadsState.editingCampaignId = campaign ? campaign.id : null;
+  const title = $('#campaign-modal-title');
+  if (title) title.textContent = campaign ? 'Editar Campanha' : 'Nova Campanha';
+
+  $('#campaign-name').value = campaign ? campaign.name || '' : '';
+  $('#campaign-type').value = campaign ? campaign.type : 'B2C';
+  $('#campaign-status').value = campaign ? campaign.status : 'active';
+  $('#campaign-desc').value = campaign ? campaign.desc || '' : '';
+
+  $('#campaign-modal').classList.remove('hidden');
+}
+
+$('#add-campaign-btn')?.addEventListener('click', () => openCampaignModal(null));
+$('#close-campaign-modal')?.addEventListener('click', () => $('#campaign-modal').classList.add('hidden'));
+$('#cancel-campaign-modal')?.addEventListener('click', () => $('#campaign-modal').classList.add('hidden'));
+
+$('#save-campaign-btn')?.addEventListener('click', () => {
+  const name = $('#campaign-name').value.trim();
+  if (!name) { showToast('Informe o nome da campanha', 'warning'); return; }
+
+  const data = {
+    id: leadsState.editingCampaignId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name,
+    type: $('#campaign-type').value,
+    status: $('#campaign-status').value,
+    desc: $('#campaign-desc').value.trim(),
+    createdAt: leadsState.editingCampaignId ? (leadsState.campaigns.find(c => c.id === leadsState.editingCampaignId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
+  };
+
+  if (leadsState.editingCampaignId) {
+    const idx = leadsState.campaigns.findIndex(c => c.id === leadsState.editingCampaignId);
+    if (idx >= 0) leadsState.campaigns[idx] = data;
+  } else {
+    leadsState.campaigns.push(data);
+  }
+
+  saveCampaigns();
+  refreshLeadsUI();
+  $('#campaign-modal').classList.add('hidden');
+  showToast(leadsState.editingCampaignId ? 'Campanha atualizada!' : 'Campanha criada!', 'success');
+  leadsState.editingCampaignId = null;
+});
+
+// ── Filters & Search ──
+$$('[data-lead-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('[data-lead-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    leadsState.filter = btn.dataset.leadFilter;
+    renderLeadTable();
+  });
+});
+
+$('#search-leads')?.addEventListener('input', (e) => {
+  leadsState.searchQuery = e.target.value;
+  renderLeadTable();
+});
+
+$('#search-campaigns')?.addEventListener('input', (e) => {
+  leadsState.campaignSearch = e.target.value;
+  renderCampaigns();
+});
+
+// ── Seed demo data if empty ──
+if (leadsState.leads.length === 0 && leadsState.campaigns.length === 0) {
+  leadsState.campaigns = [
+    { id: 'c1', name: 'Black Friday 2026', type: 'B2C', status: 'active', desc: 'Promoção de final de ano', createdAt: new Date().toISOString() },
+    { id: 'c2', name: 'Prospecção Enterprise', type: 'B2B', status: 'active', desc: 'Grandes empresas do sudeste', createdAt: new Date().toISOString() },
+    { id: 'c3', name: 'Reativação Q1', type: 'mixed', status: 'paused', desc: 'Reativar clientes inativos', createdAt: new Date().toISOString() }
+  ];
+  leadsState.leads = [
+    { id: 'l1', name: 'Maria Silva', type: 'B2C', company: '', phone: '(11) 99999-1234', email: 'maria@email.com', city: 'São Paulo, SP', campaignId: 'c1', status: 'waiting', obs: '', createdAt: new Date().toISOString() },
+    { id: 'l2', name: 'João Santos', type: 'B2C', company: '', phone: '(21) 98888-5678', email: 'joao@email.com', city: 'Rio de Janeiro, RJ', campaignId: 'c1', status: 'contacted', obs: '', createdAt: new Date().toISOString() },
+    { id: 'l3', name: 'Ana Costa', type: 'B2C', company: '', phone: '(31) 97777-4321', email: 'ana@email.com', city: 'Belo Horizonte, MG', campaignId: 'c1', status: 'waiting', obs: '', createdAt: new Date().toISOString() },
+    { id: 'l4', name: 'Carlos Ferreira', type: 'B2B', company: 'Tech Solutions LTDA', phone: '(11) 3333-4567', email: 'carlos@techsol.com', city: 'São Paulo, SP', campaignId: 'c2', status: 'waiting', obs: 'CTO — decisor', createdAt: new Date().toISOString() },
+    { id: 'l5', name: 'Fernanda Lima', type: 'B2B', company: 'Grupo Inovar S.A.', phone: '(41) 3030-9876', email: 'fernanda@inovar.com', city: 'Curitiba, PR', campaignId: 'c2', status: 'converted', obs: 'Contrato assinado', createdAt: new Date().toISOString() },
+    { id: 'l6', name: 'Roberto Alves', type: 'B2C', company: '', phone: '(11) 96666-7777', email: 'roberto@email.com', city: 'São Paulo, SP', campaignId: 'c3', status: 'lost', obs: 'Sem interesse', createdAt: new Date().toISOString() },
+    { id: 'l7', name: 'Patricia Gomes', type: 'B2B', company: 'DataCorp', phone: '(21) 2222-3333', email: 'patricia@datacorp.com', city: 'Rio de Janeiro, RJ', campaignId: 'c2', status: 'waiting', obs: '', createdAt: new Date().toISOString() },
+    { id: 'l8', name: 'Lucas Martins', type: 'B2C', company: '', phone: '(85) 98765-4321', email: 'lucas@email.com', city: 'Fortaleza, CE', campaignId: 'c1', status: 'waiting', obs: '', createdAt: new Date().toISOString() },
+    { id: 'l9', name: 'Beatriz Oliveira', type: 'B2C', company: '', phone: '(71) 99111-2222', email: 'bia@email.com', city: 'Salvador, BA', campaignId: null, status: 'contacted', obs: 'Retornar segunda', createdAt: new Date().toISOString() },
+    { id: 'l10', name: 'Ricardo Souza', type: 'B2B', company: 'Infra Net Telecom', phone: '(62) 3344-5566', email: 'ricardo@infranet.com', city: 'Goiânia, GO', campaignId: 'c2', status: 'waiting', obs: 'Agendar reunião', createdAt: new Date().toISOString() }
+  ];
+  saveCampaigns();
+  saveLeads();
+}
+
+// Initial render
+refreshLeadsUI();
+
 // ═══ INIT ═══
 setupSocketEvents();
 

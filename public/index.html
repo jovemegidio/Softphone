@@ -132,6 +132,10 @@
               <span class="material-icons-round">edit_note</span>
               <span class="nav-label">Bloco de Notas</span>
             </li>
+            <li class="nav-item" data-tab="leads">
+              <span class="material-icons-round">leaderboard</span>
+              <span class="nav-label">Leads</span>
+            </li>
           </ul>
           <div class="sidebar-bottom">
             <li class="nav-item" data-tab="settings">
@@ -415,6 +419,245 @@
                 </div>
               </div>
 
+            </div>
+          </div>
+
+          <!-- ===== ABA LEADS & CAMPANHAS ===== -->
+          <div id="tab-leads" class="tab-panel">
+            <div class="panel-full leads-panel">
+              <div class="panel-header">
+                <h2>Leads & Campanhas</h2>
+                <div class="leads-header-actions">
+                  <button class="btn btn-primary btn-sm" id="add-lead-btn">
+                    <span class="material-icons-round">person_add</span> Novo Lead
+                  </button>
+                  <button class="btn btn-secondary btn-sm" id="add-campaign-btn">
+                    <span class="material-icons-round">campaign</span> Nova Campanha
+                  </button>
+                </div>
+              </div>
+
+              <div class="leads-scroll">
+
+                <!-- KPI Cards -->
+                <div class="leads-kpi-row">
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-total"><span class="material-icons-round">groups</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-total">0</span>
+                      <span class="kpi-label">Total de Leads</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-waiting"><span class="material-icons-round">hourglass_top</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-waiting">0</span>
+                      <span class="kpi-label">Em Espera</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-b2c"><span class="material-icons-round">person</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-b2c">0</span>
+                      <span class="kpi-label">B2C</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-b2b"><span class="material-icons-round">business</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-b2b">0</span>
+                      <span class="kpi-label">B2B</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-converted"><span class="material-icons-round">check_circle</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-converted">0</span>
+                      <span class="kpi-label">Convertidos</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <div class="kpi-icon kpi-lost"><span class="material-icons-round">cancel</span></div>
+                    <div class="kpi-info">
+                      <span class="kpi-value" id="kpi-lost">0</span>
+                      <span class="kpi-label">Perdidos</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Campanhas + Leads por Cidade -->
+                <div class="leads-grid">
+
+                  <!-- Campanhas Ativas -->
+                  <div class="leads-section">
+                    <div class="leads-section-header">
+                      <div class="leads-section-title">
+                        <span class="material-icons-round">campaign</span>
+                        <h3>Campanhas Ativas</h3>
+                      </div>
+                      <span class="badge" id="campaign-count">0</span>
+                    </div>
+                    <div class="search-box">
+                      <span class="material-icons-round">search</span>
+                      <input type="text" id="search-campaigns" placeholder="Buscar campanhas...">
+                    </div>
+                    <ul id="campaign-list" class="entity-list leads-entity-list">
+                      <li class="empty-state">
+                        <span class="material-icons-round">campaign</span>
+                        <p>Nenhuma campanha criada</p>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <!-- Leads por Cidade -->
+                  <div class="leads-section">
+                    <div class="leads-section-header">
+                      <div class="leads-section-title">
+                        <span class="material-icons-round">location_city</span>
+                        <h3>Leads por Cidade</h3>
+                      </div>
+                      <span class="badge" id="city-count">0</span>
+                    </div>
+                    <ul id="city-lead-list" class="entity-list leads-entity-list">
+                      <li class="empty-state">
+                        <span class="material-icons-round">map</span>
+                        <p>Sem dados de localização</p>
+                      </li>
+                    </ul>
+                  </div>
+
+                </div>
+
+                <!-- Fila de Leads -->
+                <div class="leads-section leads-queue-section">
+                  <div class="leads-section-header">
+                    <div class="leads-section-title">
+                      <span class="material-icons-round">format_list_numbered</span>
+                      <h3>Fila de Leads</h3>
+                    </div>
+                    <div class="leads-filters">
+                      <button class="filter-btn active" data-lead-filter="all">Todos</button>
+                      <button class="filter-btn" data-lead-filter="waiting">Em Espera</button>
+                      <button class="filter-btn" data-lead-filter="contacted">Contactados</button>
+                      <button class="filter-btn" data-lead-filter="converted">Convertidos</button>
+                      <button class="filter-btn" data-lead-filter="lost">Perdidos</button>
+                    </div>
+                  </div>
+                  <div class="search-box">
+                    <span class="material-icons-round">search</span>
+                    <input type="text" id="search-leads" placeholder="Buscar leads por nome, empresa, cidade...">
+                  </div>
+                  <div class="leads-table-wrap">
+                    <table class="leads-table" id="leads-table">
+                      <thead>
+                        <tr>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Empresa</th>
+                          <th>Cidade</th>
+                          <th>Campanha</th>
+                          <th>Status</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody id="leads-tbody">
+                        <tr class="leads-empty-row">
+                          <td colspan="7">
+                            <div class="empty-state">
+                              <span class="material-icons-round">person_search</span>
+                              <p>Nenhum lead cadastrado</p>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- Lead Modal -->
+          <div id="lead-modal" class="modal-overlay hidden">
+            <div class="modal">
+              <div class="modal-header">
+                <h3 id="lead-modal-title">Novo Lead</h3>
+                <button class="btn-ghost modal-close" id="close-lead-modal"><span class="material-icons-round">close</span></button>
+              </div>
+              <div class="modal-body">
+                <div class="form-row">
+                  <div class="form-field"><label>Nome</label><input type="text" id="lead-name" placeholder="Nome completo"></div>
+                  <div class="form-field"><label>Tipo</label>
+                    <select id="lead-type" class="lead-select">
+                      <option value="B2C">B2C — Pessoa Física</option>
+                      <option value="B2B">B2B — Pessoa Jurídica</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-field"><label>Empresa</label><input type="text" id="lead-company" placeholder="Empresa / Organização"></div>
+                  <div class="form-field"><label>Telefone</label><input type="text" id="lead-phone" placeholder="(00) 00000-0000"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-field"><label>Email</label><input type="email" id="lead-email" placeholder="email@exemplo.com"></div>
+                  <div class="form-field"><label>Cidade / Estado</label><input type="text" id="lead-city" placeholder="São Paulo, SP"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-field"><label>Campanha</label>
+                    <select id="lead-campaign" class="lead-select">
+                      <option value="">— Sem campanha —</option>
+                    </select>
+                  </div>
+                  <div class="form-field"><label>Status</label>
+                    <select id="lead-status" class="lead-select">
+                      <option value="waiting">⏳ Em Espera</option>
+                      <option value="contacted">📞 Contactado</option>
+                      <option value="converted">✅ Convertido</option>
+                      <option value="lost">❌ Perdido</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-field"><label>Observações</label><textarea id="lead-obs" rows="3" placeholder="Notas sobre este lead..."></textarea></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-lead-modal">Cancelar</button>
+                <button class="btn btn-primary" id="save-lead-btn">Salvar Lead</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Campaign Modal -->
+          <div id="campaign-modal" class="modal-overlay hidden">
+            <div class="modal">
+              <div class="modal-header">
+                <h3 id="campaign-modal-title">Nova Campanha</h3>
+                <button class="btn-ghost modal-close" id="close-campaign-modal"><span class="material-icons-round">close</span></button>
+              </div>
+              <div class="modal-body">
+                <div class="form-field"><label>Nome da Campanha</label><input type="text" id="campaign-name" placeholder="Ex: Black Friday 2026"></div>
+                <div class="form-row">
+                  <div class="form-field"><label>Tipo</label>
+                    <select id="campaign-type" class="lead-select">
+                      <option value="B2C">B2C</option>
+                      <option value="B2B">B2B</option>
+                      <option value="mixed">Mista</option>
+                    </select>
+                  </div>
+                  <div class="form-field"><label>Status</label>
+                    <select id="campaign-status" class="lead-select">
+                      <option value="active">🟢 Ativa</option>
+                      <option value="paused">🟡 Pausada</option>
+                      <option value="finished">⚫ Finalizada</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-field"><label>Descrição</label><textarea id="campaign-desc" rows="3" placeholder="Descreva a campanha..."></textarea></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-campaign-modal">Cancelar</button>
+                <button class="btn btn-primary" id="save-campaign-btn">Salvar Campanha</button>
+              </div>
             </div>
           </div>
 
