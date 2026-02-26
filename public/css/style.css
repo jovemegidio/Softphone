@@ -340,6 +340,7 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 /* Sidebar Nav */
@@ -386,12 +387,15 @@ body {
 .content-area {
   flex: 1;
   overflow: hidden;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
-.tab-panel { display: none; height: 100%; }
-.tab-panel.active { display: flex; }
+.tab-panel { display: none; height: 100%; width: 100%; }
+.tab-panel.active { display: flex; flex: 1; min-height: 0; }
 
 /* Panel layouts */
-.panel-split { display: flex; flex: 1; height: 100%; }
+.panel-split { display: flex; flex: 1; height: 100%; width: 100%; min-width: 0; }
 .panel-list {
   width: 320px;
   border-right: 1px solid var(--gray-200);
@@ -407,6 +411,7 @@ body {
   justify-content: center;
   background: var(--gray-50);
   position: relative;
+  min-width: 0;
 }
 .panel-full {
   flex: 1;
@@ -414,6 +419,8 @@ body {
   display: flex;
   flex-direction: column;
   padding: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .panel-header {
@@ -719,7 +726,7 @@ body {
 /* ═══════════════════════════════════════════
    NOTES TAB — NOTION STYLE
    ═══════════════════════════════════════════ */
-.notes-layout { display: flex; height: 100%; }
+.notes-layout { display: flex; height: 100%; width: 100%; min-width: 0; }
 .notes-sidebar {
   width: 280px;
   background: white;
@@ -758,6 +765,7 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--gray-50);
+  min-width: 0;
 }
 .editor-placeholder {
   display: none;
