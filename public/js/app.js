@@ -532,8 +532,9 @@ DOM.searchUsers.addEventListener('input', renderUserList);
 
 function renderUserList() {
   const query = DOM.searchUsers.value.toLowerCase();
+  const myId = isDemoMode ? '__demo__' : socket.id;
   const others = state.allUsers
-    .filter(u => u.id !== socket.id)
+    .filter(u => u.id !== myId)
     .filter(u => !query || u.username.toLowerCase().includes(query) || (u.location || '').toLowerCase().includes(query));
 
   DOM.userCount.textContent = others.length;
@@ -1933,6 +1934,101 @@ if (leadsState.leads.length === 0 && leadsState.campaigns.length === 0) {
 
 // Initial render
 refreshLeadsUI();
+
+// ═══════════════════════════════════════════
+//  MODO DEMONSTRAÇÃO / VISUALIZAÇÃO
+// ═══════════════════════════════════════════
+let isDemoMode = false;
+
+function enterDemoMode() {
+  isDemoMode = true;
+  state.username = 'Demo User';
+  state.location = 'São Paulo, SP';
+  state.userStatus = 'disponível';
+
+  DOM.topbarUsername.textContent = state.username;
+  DOM.topbarLocation.textContent = state.location;
+  DOM.topbarAvatar.textContent = 'D';
+  switchScreen('main');
+
+  // Demo badge in topbar
+  const badge = document.createElement('span');
+  badge.className = 'demo-badge';
+  badge.innerHTML = '<span class="material-icons-round">visibility</span> DEMO';
+  DOM.topbarUsername.parentNode.insertBefore(badge, DOM.topbarUsername.nextSibling);
+
+  // Connection indicator → demo
+  if (DOM.connIndicator) {
+    DOM.connIndicator.innerHTML = '<span class="conn-dot" style="background:#8b5cf6"></span><span class="conn-text">Modo Demo</span>';
+  }
+
+  // Mock online users
+  state.allUsers = [
+    { id: 'demo-1', username: 'Ana Oliveira', location: 'Rio de Janeiro, RJ', status: 'disponível' },
+    { id: 'demo-2', username: 'Pedro Santos', location: 'Curitiba, PR', status: 'disponível' },
+    { id: 'demo-3', username: 'Camila Lima', location: 'Belo Horizonte, MG', status: 'em_ligação' },
+    { id: 'demo-4', username: 'Lucas Ferreira', location: 'Salvador, BA', status: 'ausente' },
+    { id: 'demo-5', username: 'Julia Costa', location: 'Brasília, DF', status: 'disponível' },
+    { id: 'demo-6', username: 'Marcos Rocha', location: 'Fortaleza, CE', status: 'ocupado' },
+    { id: 'demo-7', username: 'Carla Mendes', location: 'Porto Alegre, RS', status: 'nao_perturbe' }
+  ];
+  renderUserList(state.allUsers);
+
+  // Mock contacts
+  state.contacts = [
+    { id: 'dc1', name: 'Ana Oliveira', phone: '(21) 99876-5432', company: 'Marketing Digital', location: 'Rio de Janeiro, RJ' },
+    { id: 'dc2', name: 'Pedro Santos', phone: '(41) 98765-4321', company: 'TechSoft', location: 'Curitiba, PR' },
+    { id: 'dc3', name: 'Camila Lima', phone: '(31) 97654-3210', company: 'Inovação S.A.', location: 'Belo Horizonte, MG' },
+    { id: 'dc4', name: 'Rafael Nunes', phone: '(11) 3456-7890', company: 'ConsultPro', location: 'São Paulo, SP' },
+    { id: 'dc5', name: 'Mariana Alves', phone: '(71) 98888-7777', company: '', location: 'Salvador, BA' }
+  ];
+  renderContacts();
+
+  // Mock call history
+  state.history = [
+    { id: 'dh1', type: 'outgoing', contact: 'Ana Oliveira', location: 'Rio de Janeiro, RJ', time: new Date(Date.now() - 1800000).toISOString(), duration: 245 },
+    { id: 'dh2', type: 'incoming', contact: 'Pedro Santos', location: 'Curitiba, PR', time: new Date(Date.now() - 7200000).toISOString(), duration: 120 },
+    { id: 'dh3', type: 'outgoing', contact: 'Camila Lima', location: 'Belo Horizonte, MG', time: new Date(Date.now() - 14400000).toISOString(), duration: 60 },
+    { id: 'dh4', type: 'incoming', contact: 'Lucas Ferreira', location: 'Salvador, BA', time: new Date(Date.now() - 28800000).toISOString(), duration: 0 },
+    { id: 'dh5', type: 'outgoing', contact: 'Julia Costa', location: 'Brasília, DF', time: new Date(Date.now() - 43200000).toISOString(), duration: 310 },
+    { id: 'dh6', type: 'incoming', contact: 'Marcos Rocha', location: 'Fortaleza, CE', time: new Date(Date.now() - 86400000).toISOString(), duration: 180 }
+  ];
+  renderHistory();
+
+  // Mock notes
+  state.notes = [
+    { id: 'dn1', title: 'Reunião com cliente', content: '<p>Discutir proposta comercial para o Q2. Levar apresentação atualizada com números do trimestre anterior.</p>', category: 'trabalho', pinned: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: 'dn2', title: 'Follow-up pendentes', content: '<p>• Ana Oliveira — retornar sobre proposta<br>• Pedro Santos — enviar contrato<br>• Camila Lima — agendar demo</p>', category: 'geral', pinned: false, createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date(Date.now() - 86400000).toISOString() },
+    { id: 'dn3', title: 'Configurações SIP', content: '<p>Servidor: sip.empresa.com<br>Porta: 5060<br>Ramal: 1001</p>', category: 'referencia', pinned: false, createdAt: new Date(Date.now() - 172800000).toISOString(), updatedAt: new Date(Date.now() - 172800000).toISOString() }
+  ];
+  renderNotesList();
+
+  showToast('Modo visualização ativo — explore a interface!', 'success');
+}
+
+// Demo button handler
+$('#demo-btn')?.addEventListener('click', () => {
+  const btn = $('#demo-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Carregando...';
+  }
+  setTimeout(() => enterDemoMode(), 400);
+});
+
+// Override logout for demo
+const _origLogout = DOM.logoutBtn?.onclick;
+DOM.logoutBtn?.addEventListener('click', () => {
+  if (isDemoMode) {
+    isDemoMode = false;
+    switchScreen('login');
+    const btn = $('#demo-btn');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-icons-round">visibility</span> Modo Visualização';
+    }
+  }
+});
 
 // ═══ INIT ═══
 setupSocketEvents();
