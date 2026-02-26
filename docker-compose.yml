@@ -1,0 +1,120 @@
+# ═══════════════════════════════════════════════════════════
+#  CRM Omnichannel — Infraestrutura de Desenvolvimento
+#  Docker Compose: PostgreSQL + Redis + RabbitMQ + Ollama
+# ═══════════════════════════════════════════════════════════
+
+version: '3.9'
+
+services:
+
+  # ─── PostgreSQL 16 + pgvector ───────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: crm-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: crm_db
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASS:-postgres_dev_2026}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crm-network
+
+  # ─── Redis 7 (Cache + Sessões + Rate Limit) ────────────
+  redis:
+    image: redis:7-alpine
+    container_name: crm-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crm-network
+
+  # ─── RabbitMQ 3.13 (Mensageria / Filas) ─────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: crm-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - crm-network
+
+  # ─── Ollama (Motor de IA Local — LLM) ──────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: crm-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    # Para GPU NVIDIA, descomente:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - crm-network
+
+  # ─── Adminer (DB Admin Web — Opcional, dev only) ────────
+  adminer:
+    image: adminer:latest
+    container_name: crm-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    networks:
+      - crm-network
+    profiles:
+      - dev
+
+# ─── Volumes Persistentes ─────────────────────────────────
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  rabbitmqdata:
+    driver: local
+  ollamadata:
+    driver: local
+
+# ─── Rede Compartilhada ──────────────────────────────────
+networks:
+  crm-network:
+    driver: bridge
+    name: crm-omnichannel-net

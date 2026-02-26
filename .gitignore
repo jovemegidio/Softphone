@@ -4,3 +4,26 @@ data/
 *.log
 .DS_Store
 Thumbs.db
+
+# Docker volumes
+pgdata/
+redisdata/
+rabbitmqdata/
+ollamadata/
+
+# Java / Spring Boot
+target/
+*.class
+*.jar
+.gradle/
+build/
+
+# Next.js
+.next/
+out/
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
